@@ -3,7 +3,7 @@
 extern volatile FSM_state_t state;
 extern volatile SYS_mode_t lpm_mode;
 
-extern unsigned int echo;
+extern volatile unsigned int echo;
 
 // System configuration
 void system_config() {
@@ -253,13 +253,18 @@ void uart_rx_disable(void) {
 //-------------------------------------------------------------
 //                          Functions
 //-------------------------------------------------------------
-void generate_pwm_wave_at_dc_freq(int timer, unsigned int duty_cycle, unsigned int freq) {
-    // currently default of 50%
-    unsigned int pwm_period = SMCLK / freq;
+void generate_pwm_wave_at_ton_freq(int timer, unsigned int on_time, unsigned int freq) {
+    // T_on received in us
+    unsigned int pwm_period = 0;
+
+    // on_time is in us and SMCLK freq is ~1MHz => register value ~= on_time.
+    // set PWM period
+    pwm_period = SMCLK / freq;
+    // set timer values
     if (timer) {    // Timer A1
         set_TA1CCR0(pwm_period);
-        set_TA1CCR1(pwm_period >> 1);
-    } else {        // Timer A0
+        set_TA1CCR1(on_time);
+    } else {        // Timer A0 -> duty cycle = 50%
         set_TA0CCR0(pwm_period);
         set_TA0CCR1(pwm_period >> 1);
     }
@@ -267,7 +272,7 @@ void generate_pwm_wave_at_dc_freq(int timer, unsigned int duty_cycle, unsigned i
 
 void timer_delay(unsigned int delay) {
     // Delay in ms
-    unsigned int actual_value = (delay / 1000) * SMCLK;
+    unsigned int actual_value = (delay * SMCLK) / 1000;
     set_TA0CCR2(actual_value);
     // start clk
     start_timer_delay();

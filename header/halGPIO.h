@@ -1,7 +1,7 @@
 #ifndef _halGPIO_H_
 #define _halGPIO_H_
 
-#include  "../header/bsp.h"         // private library - BSP layer
+#include  "bsp.h"         // private library - BSP layer
 // #include  "../header/app.h"          // private library - APP layer
 
 extern void system_config();
@@ -14,7 +14,8 @@ extern __interrupt void PBs_handler();
 extern __interrupt void USCI0RX_ISR();
 extern __interrupt void USCI0TX_ISR();
 extern __interrupt void ADC_handler();
-extern __interrupt void timerA0_handler();
+extern __interrupt void timerA0_handler(void);
+extern __interrupt void timerA1_handler(void);
 
 // #define CHECKBUSY    1  // using this define, only if we want to read from LCD
 
@@ -82,7 +83,7 @@ extern void uart_tx_disable();
 extern void uart_rx_enable();
 extern void uart_rx_disable();
 
-void generate_wave_at_dc(int timer, unsigned int duty_cycle, unsigned int freq);
+void generate_pwm_wave_at_ton_freq(int timer, unsigned int on_time, unsigned int freq);
 
 extern void print_b(char, int);
 extern void print_num(unsigned int, int, int, char);
