@@ -53,8 +53,9 @@
 
 void __GPIO_config();
 void __timerA0_config();
-void __timerA1_config();
-void __timerA2_config();
+void __timerA0_reg_2_delay_config();
+void __timerA1_reg_0_1_config();
+void __timerA1_reg_2_config();
 void __adc_config();
 void __UART_config();
 

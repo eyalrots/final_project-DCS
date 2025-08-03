@@ -3,12 +3,15 @@
 extern volatile FSM_state_t state;
 extern volatile SYS_mode_t lpm_mode;
 
+extern unsigned int echo;
+
 // System configuration
 void system_config() {
     __GPIO_config();
     __timerA0_config();
-    __timerA1_config();
-    __timerA2_config();
+    __timerA0_reg_2_delay_config();
+    __timerA1_reg_0_1_config();
+    __timerA1_reg_2_config();
     __adc_config();
     __UART_config();
 }
@@ -197,8 +200,26 @@ void print_num(unsigned int num, int start, int len, char fill) {
 //-------------------------------------------------------------
 //                          TIMERS
 //-------------------------------------------------------------
-void set_A1_duty_cycle(unsigned int new_dc) {
-    TA1CCR1 = new_dc;
+// Timer A1
+void set_TA1CCR0(unsigned int new_value) {
+    TA1CCR0 = new_value;
+}
+void set_TA1CCR1(unsigned int new_value) {
+    TA1CCR1 = new_value;
+}
+// Timer A0
+void set_TA0CCR0(unsigned int new_value) {
+    TA0CCR0 = new_value;
+}
+void set_TA0CCR1(unsigned int new_value) {
+    TA0CCR1 = new_value;
+}
+void set_TA0CCR2(unsigned int new_value) {
+    TA0CCR2 = new_value;
+}
+void start_timer_delay() {
+    TA0CTL |= MC_1;
+    __bis_SR_register(LPM0_bits + GIE);
 }
 //-------------------------------------------------------------
 
@@ -230,9 +251,81 @@ void uart_rx_disable(void) {
 //-------------------------------------------------------------
 
 //-------------------------------------------------------------
-//                          ISRs
+//                          Functions
+//-------------------------------------------------------------
+void generate_pwm_wave_at_dc_freq(int timer, unsigned int duty_cycle, unsigned int freq) {
+    // currently default of 50%
+    unsigned int pwm_period = SMCLK / freq;
+    if (timer) {    // Timer A1
+        set_TA1CCR0(pwm_period);
+        set_TA1CCR1(pwm_period >> 1);
+    } else {        // Timer A0
+        set_TA0CCR0(pwm_period);
+        set_TA0CCR1(pwm_period >> 1);
+    }
+}
+
+void timer_delay(unsigned int delay) {
+    // Delay in ms
+    unsigned int actual_value = (delay / 1000) * SMCLK;
+    set_TA0CCR2(actual_value);
+    // start clk
+    start_timer_delay();
+}
 //-------------------------------------------------------------
 
+//-------------------------------------------------------------
+//                          ISRs
+//-------------------------------------------------------------
+// for vscode to not give error now -> It is a TI compiler function...
+int __even_in_range(int val1, int val2) {
+    return 0;
+}
+
+// TA0IV ISR for delay functionality on TA0CCR2 interrupt
+#pragma vector=TIMER0_A2_VECTOR
+__interrupt void timerA0_handler(void) {
+    switch (__even_in_range(TA0IV, 0x0A)) {
+        case TA0IV_NONE:
+            break;
+        case TA0IV_TACCR1:
+            TA1CTL &= ~TAIFG;
+            break;
+        case TA0IV_TACCR2:
+            LPM0_EXIT;
+            TA0CTL = MC_0+TACLR;
+            break;
+        case TA0IV_6:
+            break;
+        case TA0IV_8:
+            break;
+        case TA0IV_TAIFG:
+            break;
+        default:
+            break;
+    }
+}
+
+// TA1IV ISR for input capture on TA1CCR2 interrupt
+#pragma vector=TIMER1_A2_VECTOR
+__interrupt void timerA1_handler(void) {
+    switch (__even_in_range(TA1IV, 0x0A)) {
+        case TA1IV_NONE:
+            break;
+        case TA1IV_TACCR1:
+            TA1CTL &= ~TAIFG;
+            break;
+        case TA1IV_TACCR2:
+            if (TA1CCTL2 & CCI) {
+                echo = TA1CCR2;
+            }
+            break;
+        case TA1IV_TAIFG:
+            break;
+        default:
+            break;
+    }
+}
 //-------------------------------------------------------------
 
 // edited using tablet we app!

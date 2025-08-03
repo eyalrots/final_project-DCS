@@ -82,6 +82,8 @@ extern void uart_tx_disable();
 extern void uart_rx_enable();
 extern void uart_rx_disable();
 
+void generate_wave_at_dc(int timer, unsigned int duty_cycle, unsigned int freq);
+
 extern void print_b(char, int);
 extern void print_num(unsigned int, int, int, char);
 

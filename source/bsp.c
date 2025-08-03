@@ -46,16 +46,28 @@ void __GPIO_config() {
 
 // TIMERS
 void __timerA0_config() {
+    // TA0CCTL1 controls TA0CCR1 for output compare -> PWM wave duty_cycle
     TA0CTL = TASSEL_2;      // SMCLK
     TA0CCTL1 = OUTMOD_7;    // TA0CCR1 reset/set
 }
 
-void __timerA1_config() {
+void __timerA0_reg_2_delay_config() {
+    TA0CTL = TASSEL_2;
+    // Enable interrupt for TA0CCR2 on output compare
+    TA0CCTL2 = CCIE;
+    // Clear pending interrupts
+    TA0CCTL2 &= ~CCIFG;
+}
+
+void __timerA1_reg_0_1_config() {
+    // TA1CCTL1 controls TA1CCR1 for output compare -> PWM wave duty_cycle
     TA1CTL = TASSEL_2;      // SMCLK
     TA1CCTL1 = OUTMOD_7;    // TA1CCR1 reset/set
 }
 
-void __timerA2_config() {
+void __timerA1_reg_2_config() {
+    // TA1CCTL2 controls TA1CCR2 for input capture
+    TA1CTL = TASSEL_2;      // SMCLK
     TA1CCTL2 = CAP + CM_1 + CCIE + SCS + CCIS_0;
     // CM_1 - /* Capture mode: 1 - pos. edge */
     // SCS - /* Capture synchronize */
