@@ -76,18 +76,12 @@ extern void lcd_init();
 extern void lcd_strobe();
 extern void DelayMs(unsigned int);
 extern void DelayUs(unsigned int);
-extern void timer_enable();
-extern void timer_disable();
-extern void set_timer_value();
-extern void button_disable();
-extern void button_enable();
-extern int pot_read();
+
 extern void uart_tx_enable();
 extern void uart_tx_disable();
 extern void uart_rx_enable();
 extern void uart_rx_disable();
-extern void adc_start_conversion();
-extern void adc_stop_conversion();
+
 extern void print_b(char, int);
 extern void print_num(unsigned int, int, int, char);
 
