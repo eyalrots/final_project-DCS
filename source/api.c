@@ -6,6 +6,11 @@ extern volatile SYS_mode_t lpm_mode;
 volatile unsigned int echo_rising_edge, echo_falling_edge;
 
 void get_distance_from_sensor(unsigned int *distance_cm) {
+    /*
+        The distance is calculated by the difference between the
+            rising and falling edge of the echo signal.
+        The difference is the HIGH time of the signal.
+    */
     unsigned int echo_high_time = 0;
 
     generate_trigger_for_distance_sensor();
@@ -30,8 +35,11 @@ void move_motor_to_new_angle(unsigned int new_angle) {
         return;
     }
     in_range_angle %= 180;
-    // set on time -> 0.6ms + 1.9ms*(angle/180)
-    // 0 degrees = 0.6ms ; range = 1.9ms ; relative shift for angle = new_angle/180
+    /* 
+        Set on time -> 0.6ms + 1.9ms*(angle/180)
+        0 degrees = 0.6ms ; range = 1.9ms
+            relative shift for angle = new_angle/180
+    */
     on_time_us = 600 + ((1900 * new_angle) / 180);
 
     generate_pwm_wave_with_Ton_at_freq(on_time_us, 40);
@@ -51,8 +59,8 @@ void scan_with_motor() {
     while (state==state1) {
         // move motor to the next angle
         move_motor_to_new_angle(current_angle);
-        // wait 4ms = 4000us
-        timer0_start_delay(40000);
+        // wait 4ms = 4000us - adjusted for actual frequency -> 4834.
+        timer0_start_delay(4384);
         // turn of PWM
         turn_off_pwm();
         // get distance
