@@ -2,75 +2,82 @@
 
 void __GPIO_config() {
     WDTCTL = WDTHOLD | WDTPW;           // Stop WDT
-
+    
+    // NOTE: LCD was P1.5-7 ; changed to P1.4-7 - could generate problems!
     // LCD configuration
-    LCD_DATA_WRITE  &= ~LCD_DATA;       // Bit clear P1.5-P1.7
-    LCD_DATA_DIR    |= LCD_DATA;        // P1.5-P1.7 -> output('1')
+    LCD_DATA_WRITE  &= ~LCD_DATA;       // Bit clear P1.4-P1.7
+    LCD_DATA_DIR    |= LCD_DATA;        // P1.4-P1.7 -> output('1')
     LCD_DATA_SEL    &= ~LCD_DATA;       // GPIO capabilities
     LCD_CTL_SEL     &= ~LCD_DATA;       // Bit clear P2.5-P2.7
 
     // PushButtons Setup
-    // PB0
+    // PB0 - P1.0
     PBsArrPortSel   &= ~BIT0;           // GPIO capability
     PBsArrPortDir   &= ~BIT0;           // input direction
     PBsArrIntEdgeSel|= BIT0;            // pull-up mode
     PBsArrIntEn     |= BIT0;
     PBsArrIntPend   &= ~BIT0;           // clear pending interrupts
-    // PB1
+    // PB1 - P1.3
     PBsArrPortSel   &= ~BIT3;           // GPIO capability
     PBsArrPortDir   &= ~BIT3;           // input direction
     PBsArrIntEdgeSel|= BIT3;            // pull-up mode
     PBsArrIntEn     |= BIT3;
     PBsArrIntPend   &= ~BIT3;           // clear pending interrupts
 
-    // Servo engine -> Timer A1 PWM
-    SERVO_DIR       |= BIT0;            // output mode (output compare)
-    SERVO_SEL       |= BIT0;            // Primary peripheral (Timer A1)
-    SERVO_OUT       &= ~BIT0;           // Set out=0
+    // Servo engine -> Timer A1 PWM ; P2.2 as of Data-Sheet.
+    SERVO_DIR       |= BIT2;            // output mode (output compare)
+    SERVO_SEL       |= BIT2;            // Primary peripheral (Timer A1)
+    SERVO_OUT       &= ~BIT2;           // Set out=0
 
     // Distance sensor -> Trigger on Timer B + Echo on Timer A2
-    // Trigger
-    DIST_TRIGGER_DIR    |= BIT1;        // output mode (output compare)
-    DIST_TRIGGER_SEL    |= BIT1;        // Primary peripheral (Timer B)
-    DIST_TRIGGER_OUT    &= ~BIT1;       // Set out=0
-    // Echo
-    DIST_ECHO_DIR       &= ~BIT2;       // input mode (input capture)
-    DIST_ECHO_SEL       |= BIT2;        // Primary peripheral (Timer A2)
+    // Trigger - P2.3
+    DIST_TRIGGER_DIR    |= DIST_TRIGGER_MUSK;       // output mode
+    DIST_TRIGGER_SEL    &= ~DIST_TRIGGER_MUSK;      // I/O capabilities
+    DIST_TRIGGER_OUT    &= ~DIST_TRIGGER_MUSK;      // Set out=0
+    // Echo - P2.4
+    DIST_ECHO_DIR       &= ~DIST_ECHO_MUSK;         // input mode (input capture)
+    DIST_ECHO_SEL       |= DIST_ECHO_MUSK;          // Primary peripheral (Timer A2)
 
-    // LDR configuration
+    // LDR configuration - P2.0-1
     LDR_DIR         &= ~LDR_MUSK;       // input mode
-    LDR_SEL         &= ~LDR_MUSK;       // IO capabilities
+    LDR_SEL         &= ~LDR_MUSK;       // I/O capabilities
 
     _BIS_SR(GIE);                 // enable interrupts globally
 }
 
 // TIMERS
-void __timerA0_config() {
-    // TA0CCTL1 controls TA0CCR1 for output compare -> PWM wave duty_cycle
-    TA0CTL = TASSEL_2;      // SMCLK
-    TA0CCTL1 = OUTMOD_7;    // TA0CCR1 reset/set
+void __timerA0_delay_config() {
+    /*
+        Timer0 A0 used for delay.
+        clk: SMCLK = ~1MHz.
+        We want to get to a resolution of us in the delay
+            therfore we do not divide the timer.
+        Now TA0CCR0 value ~= delay in us.
+    */
+    // Clear timer register
+    TA0CTL |= TACLR;
+    // Set: clk=SMCLK ; enable interrupt
+    TA0CTL = TASSEL_2 + TAIE;
+    TA0CTL &= ~TAIFG;
 }
 
-void __timerA0_reg_2_delay_config() {
-    TA0CTL = TASSEL_2;
-    // Enable interrupt for TA0CCR2 on output compare
-    TA0CCTL2 = CCIE;
-    // Clear pending interrupts
-    TA0CCTL2 &= ~CCIFG;
-}
-
-void __timerA1_reg_0_1_config() {
+void __timer1_pwm_config() {
     // TA1CCTL1 controls TA1CCR1 for output compare -> PWM wave duty_cycle
     TA1CTL = TASSEL_2;      // SMCLK
     TA1CCTL1 = OUTMOD_7;    // TA1CCR1 reset/set
 }
 
-void __timerA1_reg_2_config() {
-    // TA1CCTL2 controls TA1CCR2 for input capture
+void __timer1_A2_capture_config() {
+    /*
+        TA1CCTL2 controls TA1CCR2 for input capture
+        TASSEL_2: clk = SMCLK.
+        CAP: enable capture.
+        CCIS_0: capture for P2.4 - CCI2A (Data Sheet).
+        SCS: capture synchronize.
+        CCIE: enable interrupts.
+    */
     TA1CTL = TASSEL_2;      // SMCLK
-    TA1CCTL2 = CAP + CM_1 + CCIE + SCS + CCIS_0;
-    // CM_1 - /* Capture mode: 1 - pos. edge */
-    // SCS - /* Capture synchronize */
+    TA1CCTL2 = CAP + CM_3 + CCIE + SCS + CCIS_0;
 }
 
 // ADC -> getting LDR values (needs check -> later!)

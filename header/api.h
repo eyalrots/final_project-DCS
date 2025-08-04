@@ -3,6 +3,6 @@
 
 #include "halGPIO.h"
 
-#define SCAN_STEP_US   95
+#define SCAN_STEP   9
 
 #endif

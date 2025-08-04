@@ -3,15 +3,15 @@
 extern volatile FSM_state_t state;
 extern volatile SYS_mode_t lpm_mode;
 
-extern volatile unsigned int echo;
+extern volatile unsigned int echo_rising_edge, echo_falling_edge;
 
 // System configuration
 void system_config() {
     __GPIO_config();
-    __timerA0_config();
-    __timerA0_reg_2_delay_config();
-    __timerA1_reg_0_1_config();
-    __timerA1_reg_2_config();
+    __timerA0_delay_config();
+    __timerA0_delay_config();
+    __timer1_pwm_config();
+    __timer1_A2_capture_config();
     __adc_config();
     __UART_config();
 }
@@ -207,18 +207,30 @@ void set_TA1CCR0(unsigned int new_value) {
 void set_TA1CCR1(unsigned int new_value) {
     TA1CCR1 = new_value;
 }
+void turn_off_pwm() {
+    // stop timer
+    TA1CTL &= ~MC_0;
+    TA1CTL |= TACLR;
+}
+void turn_on_pwm() {
+    // enable timer at up-mode
+    TA1CTL |= MC_1;
+}
 // Timer A0
-void set_TA0CCR0(unsigned int new_value) {
-    TA0CCR0 = new_value;
-}
-void set_TA0CCR1(unsigned int new_value) {
-    TA0CCR1 = new_value;
-}
-void set_TA0CCR2(unsigned int new_value) {
-    TA0CCR2 = new_value;
-}
-void start_timer_delay() {
-    TA0CTL |= MC_1;
+void timer0_start_delay(unsigned int time_us) {
+    /*
+        Timer0 A0 used for delay.
+        Input: time for delay in us.
+        Since timer clk is ~1M -> register value ~= time_us.
+    */
+    unsigned int register_value = 0;
+    unsigned int in_range_time_us = 0;
+
+    // set time to range [0,485]ms
+    in_range_time_us = time_us>=485001? 485000 : time_us;
+    // set register to currect delay
+    TA0CCR0 = time_us;
+    TA0CTL = TASSEL_2 + MC_1;
     __bis_SR_register(LPM0_bits + GIE);
 }
 //-------------------------------------------------------------
@@ -251,69 +263,60 @@ void uart_rx_disable(void) {
 //-------------------------------------------------------------
 
 //-------------------------------------------------------------
-//                          Functions
+//                  General Functions
 //-------------------------------------------------------------
-void generate_pwm_wave_at_ton_freq(int timer, unsigned int on_time, unsigned int freq) {
+void generate_pwm_wave_with_Ton_at_freq(unsigned int on_time, unsigned int freq) {
     // T_on received in us
     unsigned int pwm_period = 0;
 
-    // on_time is in us and SMCLK freq is ~1MHz => register value ~= on_time.
+    // Turn on timer
+    turn_on_pwm();
+    // on_time is in [us] and SMCLK freq = ~1MHz => register value ~= on_time.
     // set PWM period
     pwm_period = SMCLK / freq;
     // set timer values
-    if (timer) {    // Timer A1
-        set_TA1CCR0(pwm_period);
-        set_TA1CCR1(on_time);
-    } else {        // Timer A0 -> duty cycle = 50%
-        set_TA0CCR0(pwm_period);
-        set_TA0CCR1(pwm_period >> 1);
-    }
+    // Timer A1
+    set_TA1CCR0(pwm_period);
+    set_TA1CCR1(on_time);
 }
 
-void timer_delay(unsigned int delay) {
-    // Delay in ms
-    unsigned int actual_value = (delay * SMCLK) / 1000;
-    set_TA0CCR2(actual_value);
-    // start clk
-    start_timer_delay();
+void timer1_A2_start_capture() {
+    echo_rising_edge = echo_falling_edge = 0;
+    // enable interrupt for capture
+    TA1CCTL2 |= CCIE;
+    // enter sleep
+    __bis_SR_register(LPM0_bits + GIE);
+}
+
+void generate_trigger_for_distance_sensor() {
+    // Set out=1
+    DIST_TRIGGER_OUT |= DIST_TRIGGER_MUSK;
+    // Wait for ~10us -> set 11 for adjusted SMCLK frequency.
+    timer0_start_delay(11);
+    // Set out=0
+    DIST_TRIGGER_OUT &= ~DIST_TRIGGER_MUSK;
 }
 //-------------------------------------------------------------
 
 //-------------------------------------------------------------
 //                          ISRs
 //-------------------------------------------------------------
-// for vscode to not give error now -> It is a TI compiler function...
+// for vscode to not get an error now -> It's a TI compiler function...
 int __even_in_range(int val1, int val2) {
     return 0;
 }
 
-// TA0IV ISR for delay functionality on TA0CCR2 interrupt
-#pragma vector=TIMER0_A2_VECTOR
+// Timer0 A0 ISR - end of delay.
+#pragma vector=TIMER0_A0_VECTOR
 __interrupt void timerA0_handler(void) {
-    switch (__even_in_range(TA0IV, 0x0A)) {
-        case TA0IV_NONE:
-            break;
-        case TA0IV_TACCR1:
-            TA1CTL &= ~TAIFG;
-            break;
-        case TA0IV_TACCR2:
-            LPM0_EXIT;
-            TA0CTL = MC_0+TACLR;
-            break;
-        case TA0IV_6:
-            break;
-        case TA0IV_8:
-            break;
-        case TA0IV_TAIFG:
-            break;
-        default:
-            break;
-    }
+    LPM0_EXIT;
+    TA0CTL = MC_0 + TACLR;
 }
 
-// TA1IV ISR for input capture on TA1CCR2 interrupt
+// TA1IV ISR for input capture on TA1CCR2 interrupt.
 #pragma vector=TIMER1_A2_VECTOR
 __interrupt void timerA1_handler(void) {
+    static unsigned int count = 0x0;
     switch (__even_in_range(TA1IV, 0x0A)) {
         case TA1IV_NONE:
             break;
@@ -322,7 +325,20 @@ __interrupt void timerA1_handler(void) {
             break;
         case TA1IV_TACCR2:
             if (TA1CCTL2 & CCI) {
-                echo = TA1CCR2;
+                // This means we are on the rising edge.
+                if (!count) {
+                    echo_rising_edge = TA1CCR2;
+                    count++;
+                }
+                // This means we are on the falling edge. 
+                else {
+                    echo_falling_edge = TA1CCR2;
+                    // disable interrupt
+                    TA1CCTL2 &= ~CCIE;
+                    count = 0x0;
+                    // exit sleep
+                    __bis_SR_register_on_exit(LPM0_bits + GIE);
+                }
             }
             break;
         case TA1IV_TAIFG:
@@ -332,5 +348,3 @@ __interrupt void timerA1_handler(void) {
     }
 }
 //-------------------------------------------------------------
-
-// edited using tablet we app!

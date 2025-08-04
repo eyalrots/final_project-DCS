@@ -83,9 +83,13 @@ extern void uart_tx_disable();
 extern void uart_rx_enable();
 extern void uart_rx_disable();
 
-void generate_pwm_wave_at_ton_freq(int timer, unsigned int on_time, unsigned int freq);
+void turn_off_pwm();
+void timer0_start_delay(unsigned int time_us);
+void generate_pwm_wave_with_Ton_at_freq(unsigned int on_time, unsigned int freq);
+void timer1_A2_start_capture();
+void generate_trigger_for_distance_sensor();
 
-extern void print_b(char, int);
-extern void print_num(unsigned int, int, int, char);
+void print_b(char b, int start);
+void print_num(unsigned int num, int start, int len, char fill);
 
 #endif

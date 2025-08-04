@@ -5,7 +5,7 @@
 //#include    <msp430g2553.h>                 // CCS
 
 
-#define   LCD_DATA 0xE0
+#define   LCD_DATA 0xF0
 #define   debounceVal      250
 #define   SMCLK            1095870
 
@@ -25,15 +25,17 @@
 #define DIST_TRIGGER_DIR    P2DIR
 #define DIST_TRIGGER_SEL    P2SEL
 #define DIST_TRIGGER_OUT    P2OUT
+#define DIST_TRIGGER_MUSK   BIT3
 #define DIST_ECHO_DIR       P2DIR
 #define DIST_ECHO_SEL       P2DIR
 #define DIST_ECHO_IN        P2IN
+#define DIST_ECHO_MUSK      BIT4 // capture on A1 -> P2.4 (Data Sheet).
 
 // LDR
 #define LDR_DIR             P2DIR
 #define LDR_SEL             P2SEL
 #define LDR_IN              P2IN
-#define LDR_MUSK            0x0C    // 1100b
+#define LDR_MUSK            0x03    // 0011b
 
 // UART abstraction
 #define TXD BIT2
@@ -52,10 +54,9 @@
 #define PB3                0x08
 
 void __GPIO_config();
-void __timerA0_config();
-void __timerA0_reg_2_delay_config();
-void __timerA1_reg_0_1_config();
-void __timerA1_reg_2_config();
+void __timerA0_delay_config();;
+void __timer1_pwm_config();
+void __timer1_A2_capture_config();
 void __adc_config();
 void __UART_config();
 
