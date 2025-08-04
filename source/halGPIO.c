@@ -14,6 +14,7 @@ void system_config() {
     __timer1_A2_capture_config();
     __adc_config();
     __UART_config();
+    lcd_init();
 }
 
 // Polling cased delay functions
