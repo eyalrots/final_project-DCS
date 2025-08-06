@@ -51,14 +51,15 @@ void __timerA0_delay_config() {
         Timer0 A0 used for delay.
         clk: SMCLK = ~1MHz.
         We want to get to a resolution of us in the delay
-            therfore we do not divide the timer.
+            therefore we do not divide the timer.
         Now TA0CCR0 value ~= delay in us.
     */
     // Clear timer register
     TA0CTL |= TACLR;
-    // Set: clk=SMCLK ; enable interrupt
-    TA0CTL = TASSEL_2 + TAIE;
-    TA0CTL &= ~TAIFG;
+    // enable interrupt
+    TA0CCTL0 = CCIE;
+    // Set: clk=SMCLK
+    TA0CTL = TASSEL_2 + MC_0;
 }
 
 void __timer1_pwm_config() {

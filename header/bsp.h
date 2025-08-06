@@ -1,11 +1,12 @@
 #ifndef _bsp_H_
 #define _bsp_H_
 
-#include    "./msp_header/msp430g2553.h"    // VS-Code
-//#include    <msp430g2553.h>                 // CCS
+//#include    "./msp_header/msp430g2553.h"    // VS-Code
+#include    <msp430g2553.h>                 // CCS
+#include    <stdint.h>
 
-
-#define   LCD_DATA 0xF0
+#define   BUFFER_SIZE      8*3
+#define   LCD_DATA         0xF0
 #define   debounceVal      250
 #define   SMCLK            1095870
 
@@ -27,7 +28,7 @@
 #define DIST_TRIGGER_OUT    P2OUT
 #define DIST_TRIGGER_MUSK   BIT3
 #define DIST_ECHO_DIR       P2DIR
-#define DIST_ECHO_SEL       P2DIR
+#define DIST_ECHO_SEL       P2SEL
 #define DIST_ECHO_IN        P2IN
 #define DIST_ECHO_MUSK      BIT4 // capture on A1 -> P2.4 (Data Sheet).
 
@@ -54,7 +55,7 @@
 #define PB3                0x08
 
 void __GPIO_config();
-void __timerA0_delay_config();;
+void __timerA0_delay_config();
 void __timer1_pwm_config();
 void __timer1_A2_capture_config();
 void __adc_config();
@@ -79,5 +80,19 @@ typedef enum {
     mode3,
     mode4
 }SYS_mode_t;
+
+// distance sample consists of distance[cm] and angle[deg].
+typedef struct distance_sample {
+    uint16_t distance_cm;
+    uint8_t  angle;
+} distance_sample_t;
+
+// Circular buffer of distance samples.
+typedef struct circular_buffer {
+    distance_sample_t buffer[BUFFER_SIZE];
+    uint8_t size;
+    uint8_t read;
+    uint8_t write;
+} circular_buffer_t;
 
 #endif

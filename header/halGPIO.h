@@ -1,7 +1,7 @@
 #ifndef _halGPIO_H_
 #define _halGPIO_H_
 
-#include  "bsp.h"         // private library - BSP layer
+#include  "../header/bsp.h"             // private library - BSP layer
 // #include  "../header/app.h"          // private library - APP layer
 
 extern void system_config();
@@ -84,12 +84,13 @@ extern void uart_rx_enable();
 extern void uart_rx_disable();
 
 void turn_off_pwm();
+void turn_on_pwm();
 void timer0_start_delay(unsigned int time_us);
 void generate_pwm_wave_with_Ton_at_freq(unsigned int on_time, unsigned int freq);
 void timer1_A2_start_capture();
 void generate_trigger_for_distance_sensor();
 
 void print_b(char b, int start);
-void print_num(unsigned int num, int start, int len, char fill);
+void print_num(uint16_t num, int start, int len, char fill);
 
 #endif

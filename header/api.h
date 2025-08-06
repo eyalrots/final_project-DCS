@@ -3,6 +3,10 @@
 
 #include "halGPIO.h"
 
-#define SCAN_STEP   9
+#define SCAN_STEP       1
+#define NUM_OF_SAMPLES  181
+
+void scan_with_motor();
+void counting();
 
 #endif
