@@ -78,10 +78,23 @@ extern void lcd_strobe();
 extern void DelayMs(unsigned int);
 extern void DelayUs(unsigned int);
 
-extern void uart_tx_enable();
-extern void uart_tx_disable();
-extern void uart_rx_enable();
-extern void uart_rx_disable();
+// Enable Transmission to PC
+inline void uart_tx_enable(void) {
+    IE2 |= UCA0TXIE;
+}
+// Disable Transmission to PC
+inline void uart_tx_disable(void) {
+    IE2 &= ~UCA0TXIE;
+}
+// Enable Receiving from PC
+inline void uart_rx_enable(void) {
+    IE2 |= UCA0RXIE;
+}
+// Disable Receiving from PC
+inline void uart_rx_disable(void) {
+    IE2 &= ~UCA0RXIE;
+}
+void uart_write(uint8_t *buffer, uint16_t size);
 
 void turn_off_pwm();
 void turn_on_pwm();
@@ -92,5 +105,13 @@ void generate_trigger_for_distance_sensor();
 
 void print_b(char b, int start);
 void print_num(uint16_t num, int start, int len, char fill);
+
+inline void disconnect_from_pwm() {
+    TA1CCTL1 = OUTMOD_5;
+}
+
+inline void connect_to_pwm() {
+    TA1CCTL1 = OUTMOD_7;
+}
 
 #endif

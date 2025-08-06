@@ -4,8 +4,10 @@
 //#include    "./msp_header/msp430g2553.h"    // VS-Code
 #include    <msp430g2553.h>                 // CCS
 #include    <stdint.h>
+#include    <stddef.h>
 
-#define   BUFFER_SIZE      8*3
+
+#define   BUFFER_LEN       8
 #define   LCD_DATA         0xF0
 #define   debounceVal      250
 #define   SMCLK            1095870
@@ -82,17 +84,28 @@ typedef enum {
 }SYS_mode_t;
 
 // distance sample consists of distance[cm] and angle[deg].
-typedef struct distance_sample {
+typedef struct __attribute__ ((packed)) distance_sample {
     uint16_t distance_cm;
     uint8_t  angle;
 } distance_sample_t;
 
 // Circular buffer of distance samples.
-typedef struct circular_buffer {
-    distance_sample_t buffer[BUFFER_SIZE];
+typedef struct __attribute__ ((packed)) circular_buffer {
+    distance_sample_t buffer[BUFFER_LEN];
     uint8_t size;
     uint8_t read;
     uint8_t write;
 } circular_buffer_t;
 
+inline void memset(uint8_t *ptr, uint8_t value, uint32_t size) {
+    while (size--) {
+        *ptr++ = value;
+    }
+}
+
+inline void memcpy(uint8_t *dst, const uint8_t *src, uint16_t size) {
+    while (size--) {
+        *dst++ = *src++;
+    }
+}
 #endif

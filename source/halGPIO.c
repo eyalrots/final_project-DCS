@@ -6,6 +6,7 @@ extern volatile SYS_mode_t lpm_mode;
 
 extern volatile unsigned int echo_rising_edge, echo_falling_edge;
 extern volatile circular_buffer_t transmit_buffer;
+extern volatile uint8_t requested_angle;
 
 volatile unsigned int count = 0x0;
 
@@ -249,21 +250,15 @@ void timer0_start_delay(unsigned int time_us) {
 //-------------------------------------------------------------
 //                          UART
 //-------------------------------------------------------------
-// Enable Transmission to PC
-void uart_tx_enable(void) {
-    IE2 |= UCA0TXIE;
-}
-// Disable Transmission to PC
-void uart_tx_disable(void) {
-    IE2 &= ~UCA0TXIE;
-}
-// Enable Receiving from PC
-void uart_rx_enable(void) {
-    IE2 |= UCA0RXIE;
-}
-// Disable Receiving from PC
-void uart_rx_disable(void) {
-    IE2 &= ~UCA0RXIE;
+void uart_write(uint8_t *buffer, uint16_t size) {
+    uint16_t i;
+    
+    if (!buffer) return;
+
+    for (i = 0; i < size; i++) {
+        while (!(IFG2 & UCA0TXIFG));
+        UCA0TXBUF = buffer[i];
+    }
 }
 //-------------------------------------------------------------
 
@@ -394,7 +389,7 @@ __interrupt void USCI0TX_ISR() {
         } else {
             UCA0TXBUF = sample.angle;
             transmit_buffer.read += sizeof(distance_sample_t);
-            transmit_buffer.read %= BUFFER_SIZE;
+            transmit_buffer.read %= BUFFER_LEN;
             transmit_buffer.size--;
             i++;
         }
@@ -403,13 +398,24 @@ __interrupt void USCI0TX_ISR() {
 
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR() {
-    switch (UCA0RXBUF) {
-        case '1':
-            state = state1;
-            break;
-        default:
-            state = state0;
-            break;
+    static uint8_t input_flag = 0;
+
+    if (input_flag) {
+        requested_angle = UCA0RXBUF;
+        input_flag = !input_flag;
+    } else {
+        switch (UCA0RXBUF) {
+            case '1':
+                state = state1;
+                break;
+            case '2':
+                state = state2;
+                input_flag = !input_flag;
+                break;
+            default:
+                state = state0;
+                break;
+        }
     }
 
     // exit lpm
