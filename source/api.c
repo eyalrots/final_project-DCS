@@ -5,9 +5,12 @@ extern volatile FSM_state_t state;
 extern volatile SYS_mode_t lpm_mode;
 
 extern volatile circular_buffer_t transmit_buffer;
+extern volatile uint8_t adc_buffer[];
 
 volatile unsigned int echo_rising_edge, echo_falling_edge;
 volatile uint8_t requested_angle;
+volatile uint8_t received_new_anlge_flag = 0;
+volatile uint16_t current_distance;
 
 // unsigned int distance_samples[NUM_OF_SAMPLES];
 
@@ -36,6 +39,11 @@ void get_distance_from_sensor(uint16_t *distance_cm) {
     *distance_cm = (echo_high_time * 173) / 10000;
 }
 
+void get_distance_from_ldrs(uint8_t *ldr1_distance, uint8_t *ldr2_distance) {
+    *ldr1_distance = adc_buffer[0];
+    *ldr2_distance = adc_buffer[3];
+}
+
 void move_motor_to_new_angle(uint8_t new_angle) {
     /* 
         Moving the motor is done by setting a new angle -
@@ -52,32 +60,22 @@ void move_motor_to_new_angle(uint8_t new_angle) {
     generate_pwm_wave_with_Ton_at_freq(on_time_us, 40);
 }
 
+void wait_for_motor() {
+    timer0_start_delay(0xffff);
+    timer0_start_delay(0xffff);
+    timer0_start_delay(0xffff);
+    timer0_start_delay(0xffff);
+    timer0_start_delay(0xffff);
+    timer0_start_delay(0xffff);
+}
+
 void go_to_zero() {
     turn_on_pwm();
     move_motor_to_new_angle(0);
-    timer0_start_delay(0xffff);
-    timer0_start_delay(0xffff);
-    timer0_start_delay(0xffff);
-    timer0_start_delay(0xffff);
-    timer0_start_delay(0xffff);
-    timer0_start_delay(0xffff);
+    wait_for_motor();
 }
 
-void print_array(unsigned int *array, unsigned int size) {
-    unsigned int i = 0;
-
-    for (i = 0; i < size; i++) {
-        print_num(array[i], 8, 3, 0x30);
-        timer0_start_delay(0xffff);
-        timer0_start_delay(0xffff);
-        timer0_start_delay(0xffff);
-        timer0_start_delay(0xffff);
-        timer0_start_delay(0xffff);
-        timer0_start_delay(0xffff);
-    }
-}
-
-void scan_with_motor() {
+void scan_with_motor(uint8_t type) {
     /*
         Moves with steps of pre-defined size (in header file).
         Between each angle there is a delay - 
@@ -103,7 +101,9 @@ void scan_with_motor() {
         // wait for a bit, let everythong settle down...
         timer0_start_delay(0x4000);
         // get distance
-        get_distance_from_sensor(&current_distance_cm);
+        if (type == 0) {
+            get_distance_from_sensor(&current_distance_cm);
+        }
         /* Turn on PWM */
         connect_to_pwm();
         turn_on_pwm();
@@ -122,7 +122,6 @@ void scan_with_motor() {
         if (transmit_buffer.size == BUFFER_LEN) {
             uart_write((uint8_t*)&transmit_buffer.buffer[transmit_buffer.read], BUFFER_LEN*sizeof(distance_sample_t));
             transmit_buffer.read = transmit_buffer.write;
-            bytes_transmitted += transmit_buffer.size * sizeof(distance_sample_t);
             transmit_buffer.size = 0;
         }
         // set next angle = current angle + step
@@ -132,41 +131,65 @@ void scan_with_motor() {
     if (transmit_buffer.size > 0) {
         uart_write((uint8_t*)&transmit_buffer.buffer[transmit_buffer.read], transmit_buffer.size*sizeof(distance_sample_t));
         transmit_buffer.read = transmit_buffer.write;
-        bytes_transmitted += transmit_buffer.size * sizeof(distance_sample_t);
-        print_num(bytes_transmitted, 8, 3, 0x30);
         transmit_buffer.size = 0;
     }
 
     while(state==state1) continue;
 }
 
+void scan_for_distance() {
+    scan_with_motor(0);
+}
+
 void scan_at_given_angle() {
     uint16_t current_distance_cm = 0;
+    distance_sample_t current_sample;
+    uint8_t flag = 0;
     
     lcd_clear();
     lcd_puts("dist:000; at:000");
-    print_num(requested_angle, 16, 3, 0x30);
     go_to_zero();
-
-    while (requested_angle == -1) continue;
-    /* Move the motor to the requested angle by user */
-    move_motor_to_new_angle(requested_angle);
-    disconnect_from_pwm();
+    
     while (state == state2) {
-        /* Get distance from sensor */
-        get_distance_from_sensor(&current_distance_cm);
-        /* Print distance on LCD */
-        print_num(current_distance_cm, 8, 3, 0x30);
-        /* Transmit distance to user */
-        uart_write((uint8_t*)&current_distance_cm, sizeof(uint16_t));
+        /* Move the motor to the requested angle by user */
+        if (received_new_anlge_flag) {
+            connect_to_pwm();
+            move_motor_to_new_angle(requested_angle);
+            print_num(requested_angle, 16, 3, 0x30);
+            wait_for_motor();
+            disconnect_from_pwm();
+            current_sample.angle = requested_angle;
+            received_new_anlge_flag = 0;
+            flag = 1;
+        }
+        if (flag) {
+            /* Get distance from sensor */
+            get_distance_from_sensor(&current_distance_cm);
+            /* Print distance on LCD */
+            print_num(current_distance_cm, 8, 3, 0x30);
+            /* Transmit distance to user */
+            current_sample.distance_cm = current_distance_cm;
+            // insert sample to transmit buffer
+            memcpy((uint8_t*)&transmit_buffer.buffer[transmit_buffer.write], (uint8_t*)&current_sample, sizeof(current_sample));
+            transmit_buffer.write++;
+            transmit_buffer.write %= BUFFER_LEN;
+            transmit_buffer.size++;
+            // transmit
+            if (transmit_buffer.size == BUFFER_LEN) {
+                uart_write((uint8_t*)&transmit_buffer.buffer[transmit_buffer.read], BUFFER_LEN*sizeof(distance_sample_t));
+                transmit_buffer.read = transmit_buffer.write;
+                transmit_buffer.size = 0;
+                return;
+            }
+            // uart_write((uint8_t*)&current_distance_cm, sizeof(uint16_t));
+        }
     }
-    requested_angle = -1;
-    connect_to_pwm();
 }
 
 void counting() {
-    uint16_t test_num = 0x1234;
-    //uint8_t test = (uint8_t)(test_num >> 8);
-    uint8_t test = (uint8_t)(test_num >> 8);
-    print_num(test, 3, 3, 0x30);
+    
+    lcd_clear();
+    lcd_puts("dist:000; at:000");
+    while (state==state2) {
+    }
 }

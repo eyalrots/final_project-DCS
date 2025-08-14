@@ -5,6 +5,8 @@ volatile SYS_mode_t lpm_mode;
 
 volatile circular_buffer_t transmit_buffer;
 
+volatile uint8_t adc_buffer[8];
+
 int main() {
     uint8_t *ptr = NULL;
 
@@ -22,7 +24,7 @@ int main() {
                 enterLPM(mode0);
                 break;
             case state1:
-                scan_with_motor();
+                scan_for_distance();
                 break;
             case state2:
                 scan_at_given_angle();

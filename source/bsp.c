@@ -1,5 +1,7 @@
 #include "../header/bsp.h"
 
+extern volatile uint8_t adc_buffer[];
+
 void __GPIO_config() {
     WDTCTL = WDTHOLD | WDTPW;           // Stop WDT
     
@@ -11,18 +13,12 @@ void __GPIO_config() {
     LCD_CTL_SEL     &= ~LCD_DATA;       // Bit clear P2.5-P2.7
 
     // PushButtons Setup
-    // PB0 - P1.0
-    PBsArrPortSel   &= ~BIT0;           // GPIO capability
-    PBsArrPortDir   &= ~BIT0;           // input direction
-    PBsArrIntEdgeSel|= BIT0;            // pull-up mode
-    PBsArrIntEn     |= BIT0;
-    PBsArrIntPend   &= ~BIT0;           // clear pending interrupts
-    // PB1 - P1.3
-    PBsArrPortSel   &= ~BIT3;           // GPIO capability
-    PBsArrPortDir   &= ~BIT3;           // input direction
-    PBsArrIntEdgeSel|= BIT3;            // pull-up mode
-    PBsArrIntEn     |= BIT3;
-    PBsArrIntPend   &= ~BIT3;           // clear pending interrupts
+    // PB0 - P2.0 ; PB1 - P2.1
+    PBsArrPortSel   &= ~PB_MUSK;        // GPIO capability
+    PBsArrPortDir   &= ~PB_MUSK;        // input direction
+    PBsArrIntEdgeSel|= PB_MUSK;         // pull-up mode
+    PBsArrIntEn     |= PB_MUSK;
+    PBsArrIntPend   &= ~PB_MUSK;        // clear pending interrupts
 
     // Servo engine -> Timer A1 PWM ; P2.2 as of Data-Sheet.
     SERVO_DIR       |= BIT2;            // output mode (output compare)
@@ -38,9 +34,13 @@ void __GPIO_config() {
     DIST_ECHO_DIR       &= ~DIST_ECHO_MUSK;         // input mode (input capture)
     DIST_ECHO_SEL       |= DIST_ECHO_MUSK;          // Primary peripheral (Timer A2)
 
-    // LDR configuration - P2.0-1
-    LDR_DIR         &= ~LDR_MUSK;       // input mode
-    LDR_SEL         &= ~LDR_MUSK;       // I/O capabilities
+    // LDR configuration
+    // LDR1 - P1.0 (A0@ADC)
+    LDR_DIR         &= ~LDR1_MUSK;       // input mode
+    LDR_SEL         &= ~LDR1_MUSK;       // I/O capabilities
+    // LDR2 - P1.3 (A3@ADC)
+    LDR_DIR         &= ~LDR2_MUSK;       // input mode
+    LDR_SEL         &= ~LDR2_MUSK;       // I/O capabilities
 
     _BIS_SR(GIE);                 // enable interrupts globally
 }
@@ -81,13 +81,30 @@ void __timer1_A2_capture_config() {
     TA1CCTL2 = CAP + CM_3 + CCIE + SCS + CCIS_0;
 }
 
-// ADC -> getting LDR values (needs check -> later!)
+// ADC -> getting LDR values
 void __adc_config() {
+    /*
+        SREF_0:     V_R+ = Vcc ; V_R- = Vss.
+        ADC10SHT_2: Sample and hold time: 16*ADC10CLKs.
+        MSC:        Multiple sample and conversion. (page 608 @ user_guide)
+        ADC10IE:    Interrupt enable.
+    */
     ADC10CTL0 = SREF_0 + ADC10SHT_2 + MSC + ADC10IE;
+    /* Clear pending interrupt flags */
     ADC10CTL0 &= ~ADC10IFG;
-
-    ADC10CTL1 = INCH_3 + SHS_0 + ADC10SSEL_3 + CONSEQ_2;
-    ADC10AE0 = BIT3; // enable P1.3 as analog input
+    /*
+        INCH_3:     Sample from A3 down to A0.
+        SHS_0:      Sample and hold source select -> ADC10SC bit.
+        ACD10SSEL_3:clk = SMCLK.
+        CONSEQ_3:   Reapeat sequence of channels.
+    */
+    ADC10CTL1 = INCH_3 + SHS_0 + ADC10SSEL_3 + CONSEQ_3;
+    /* Enable P1.0 and P1.3 as analog input */
+    ADC10AE0 = BIT0 + BIT3;
+    /* Four transfers: A3 -> A0 */
+    //ADC10DCT1 = 0x04;
+    /* Set address for transfer buffer */
+    ADC10SA = &adc_buffer;
 }
 
 // UART

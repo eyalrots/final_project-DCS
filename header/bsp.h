@@ -35,22 +35,24 @@
 #define DIST_ECHO_MUSK      BIT4 // capture on A1 -> P2.4 (Data Sheet).
 
 // LDR
-#define LDR_DIR             P2DIR
-#define LDR_SEL             P2SEL
-#define LDR_IN              P2IN
-#define LDR_MUSK            0x03    // 0011b
+#define LDR_DIR             P1DIR
+#define LDR_SEL             P1SEL
+#define LDR_IN              P1IN
+#define LDR1_MUSK           BIT0    // 0001b
+#define LDR2_MUSK           BIT3    // 1000b
 
 // UART abstraction
 #define TXD BIT2
 #define RXD BIT1
 
 // PushButtons abstraction
-#define PBsArrPort         P1IN
-#define PBsArrIntPend      P1IFG
-#define PBsArrIntEn        P1IE
-#define PBsArrIntEdgeSel   P1IES
-#define PBsArrPortSel      P1SEL
-#define PBsArrPortDir      P1DIR
+#define PBsArrPort         P2IN
+#define PBsArrIntPend      P2IFG
+#define PBsArrIntEn        P2IE
+#define PBsArrIntEdgeSel   P2IES
+#define PBsArrPortSel      P2SEL
+#define PBsArrPortDir      P2DIR
+#define PB_MUSK            0x03
 #define PB0                0x01
 #define PB1                0x02
 #define PB2                0x04

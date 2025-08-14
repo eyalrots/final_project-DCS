@@ -7,6 +7,8 @@ extern volatile SYS_mode_t lpm_mode;
 extern volatile unsigned int echo_rising_edge, echo_falling_edge;
 extern volatile circular_buffer_t transmit_buffer;
 extern volatile uint8_t requested_angle;
+extern volatile uint8_t received_new_anlge_flag;
+extern volatile uint16_t current_distance;
 
 volatile unsigned int count = 0x0;
 
@@ -244,7 +246,13 @@ void timer0_start_delay(unsigned int time_us) {
 //-------------------------------------------------------------
 //                          ADC
 //-------------------------------------------------------------
-
+void adc10_start_conversion() {
+    ADC10CTL0 |= ADC10ON;
+    ADC10CTL0 |= ENC + ADC10SC;
+}
+void adc10_stop_conversion() {
+    ADC10CTL0 &= ~(ENC + ADC10SC);
+}
 //-------------------------------------------------------------
 
 //-------------------------------------------------------------
@@ -369,33 +377,24 @@ void __attribute__ ((interrupt(TIMER1_A1_VACTOR))) Timer1_A1_ISR (void)
     }
 }
 
+// ADC10 ISR
+#pragma vector = ADC10_VECTOR
+__interrupt void ADC_handler() {}
+
 // Uart Tx ISR
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR() {
-    static uint16_t i = 0;
-    distance_sample_t sample;
+    static uint8_t bytes_sent = 0;
 
-    if (i >= 3) {
-        UCA0TXBUF = '\n';
-        i = 0;
-    } else if (transmit_buffer.size > 0) {
-        sample = transmit_buffer.buffer[transmit_buffer.read];
-        if (i == 0) {
-            UCA0TXBUF = (uint8_t)sample.distance_cm;
-            i++;
-        } else if (i == 1) {
-            UCA0TXBUF = (uint8_t)(sample.distance_cm >> 8);
-            i++;
-        } else {
-            UCA0TXBUF = sample.angle;
-            transmit_buffer.read += sizeof(distance_sample_t);
-            transmit_buffer.read %= BUFFER_LEN;
-            transmit_buffer.size--;
-            i++;
-        }
+    if (bytes_sent < 2) {
+        UCA0TXBUF = (uint8_t)(requested_angle >> (8*bytes_sent));
+        bytes_sent++;
+    } else {
+        bytes_sent = 0;
+        LPM0_EXIT;
     }
 }
-
+// Uart Rx ISR
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR() {
     static uint8_t input_flag = 0;
@@ -403,6 +402,7 @@ __interrupt void USCI0RX_ISR() {
     if (input_flag) {
         requested_angle = UCA0RXBUF;
         input_flag = !input_flag;
+        received_new_anlge_flag = 1;
     } else {
         switch (UCA0RXBUF) {
             case '1':
