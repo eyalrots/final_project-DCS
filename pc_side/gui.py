@@ -1,18 +1,17 @@
 import serial
 from tqdm import tqdm
 
-def get_distance_data(ser):
+def get_distance_data(ser, length):
     raw_samples = []
     distances = []
     angles = []
-    num_samples = 540
 
     print("In distance function...")
     # receive all sampled data from MCU
     received = 0
     size = 0
-    with tqdm(total=num_samples, unit='samples', desc='Processing Samples') as pbar:
-        while received <= num_samples:
+    with tqdm(total=length, unit='samples', desc='Processing Samples') as pbar:
+        while received <= length:
             if (ser.in_waiting > 0):
                 size = ser.in_waiting
                 data_received = ser.read(ser.in_waiting)
@@ -47,29 +46,6 @@ def get_distance_data(ser):
     
     return distances, angles
 
-def get_current_distance(ser):
-    raw_data = []
-    received = 0
-
-    while received <= 2:
-        if (ser.in_waiting > 0):
-            size = ser.in_waiting
-            data_received = ser.read(ser.in_waiting)
-            raw_data.append(data_received)
-            received += size
-    
-        # clean buffer if not empty
-        if (ser.in_waiting > 0):
-            size = ser.in_waiting
-            data_received = ser.read(ser.in_waiting)
-            raw_data.append(data_received)
-            received += size
-
-    raw_data = [item for sublist in raw_data for item in sublist]
-    distance = int.from_bytes(raw_data, byteorder="little")
-    return distance
-
-
 def main():
     options = ['1']
     state_2_flag = 1
@@ -92,21 +68,21 @@ def main():
         choice = input("Select from menu: ")
         if choice == '1':
             ser.write(choice.encode())
-            distances, angles = get_distance_data(ser)
+            distances, angles = get_distance_data(ser, 540)
             print(f"distances: {distances[0:5]} angles: {angles[0:5]}")
             # TODO: Analyze samples data to detect 5 objects and their length.
         
         if choice == '2':
             ser.write(choice.encode())
-            angle = input("Insert angle: ")
-            if not 0 <= int(angle) <= 180:
+            angle = int(input("Insert angle: "))
+            if not 0 <= angle <= 180:
                 print("Angle out of range.")
                 continue
             else:
-                ser.write(angle.encode())
-                while (True):
-                    distance = get_current_distance(ser)
-                    print(f"distance in cm: {distance}", end='\r')
+                byte_data = angle.to_bytes(1, "little")
+                ser.write(byte_data)
+                distances = get_distance_data(ser, 20)
+                print(distances)
 
 
 if __name__ == '__main__':
