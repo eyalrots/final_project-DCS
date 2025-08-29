@@ -12,7 +12,7 @@ volatile uint8_t requested_angle;
 volatile uint8_t received_new_anlge_flag = 0;
 volatile uint16_t current_distance;
 
-// unsigned int distance_samples[NUM_OF_SAMPLES];
+volatile uint16_t files[10];
 
 void init_sample_array(unsigned int *array, unsigned int size) {
     unsigned int i = 0;
@@ -39,27 +39,39 @@ void get_distance_from_sensor(uint16_t *distance_cm) {
     *distance_cm = (echo_high_time * 173) / 10000;
 }
 
-void get_distance_from_ldrs(uint8_t *ldr1_distance, uint8_t *ldr2_distance) {
-    *ldr1_distance = adc_buffer[0];
-    *ldr2_distance = adc_buffer[3];
+void get_distance_from_ldrs(uint16_t *ldr1_distance, uint16_t *ldr2_distance) {
+    // *ldr1_distance = adc_buffer[0] * 330 / 1023;
+    // *ldr2_distance = adc_buffer[3] * 330 / 1023;
+
+    ADCconfigLDR1();
+    enable_ADC();
+    enterLPM(mode0);
+    disable_ADC();
+    *ldr1_distance = sample_ADC();
+
+    ADCconfigLDR2();
+    enable_ADC();
+    enterLPM(mode0);
+    disable_ADC();
+    *ldr2_distance = sample_ADC();
 }
 
 void move_motor_to_new_angle(uint8_t new_angle) {
     /* 
-        Moving the motor is done by setting a new angle -
-            using a new duty cycle value.
-        The motor operates at 40Hz.
+    Moving the motor is done by setting a new angle -
+    using a new duty cycle value.
+    The motor operates at 40Hz.
     */
     unsigned int on_time_us = 0;
     /* 
-        Set on time -> 0.6ms + 1.9ms*(angle/180)
+    Set on time -> 0.6ms + 1.9ms*(angle/180)
         0 degrees = 0.6ms ; range = 1.9ms
-            relative shift for angle = new_angle/180
-    */
-    on_time_us = 600 + ((190 * new_angle) / 18);
-    generate_pwm_wave_with_Ton_at_freq(on_time_us, 40);
-}
-
+        relative shift for angle = new_angle/180
+        */
+        on_time_us = 600 + ((190 * new_angle) / 18);
+        generate_pwm_wave_with_Ton_at_freq(on_time_us, 40);
+    }
+    
 void wait_for_motor() {
     timer0_start_delay(0xffff);
     timer0_start_delay(0xffff);
@@ -67,6 +79,16 @@ void wait_for_motor() {
     timer0_start_delay(0xffff);
     timer0_start_delay(0xffff);
     timer0_start_delay(0xffff);
+}
+    
+void calculate_distance_ldr(uint16_t* distance) {
+    uint16_t ldr1_dist = 0;
+    uint16_t ldr2_dist = 0;
+    /* get distance from LDRs */
+    get_distance_from_ldrs(&ldr1_dist, &ldr2_dist);
+    // print_num(ldr1_dist, 8, 4, 0x30);
+    // print_num(ldr2_dist, 16, 4, 0x30);
+    *distance = (ldr1_dist + ldr2_dist) / 2;
 }
 
 void go_to_zero() {
@@ -103,6 +125,8 @@ void scan_with_motor(uint8_t type) {
         // get distance
         if (type == 0) {
             get_distance_from_sensor(&current_distance_cm);
+        } else if (type == 1) {
+            calculate_distance_ldr(&current_distance_cm);
         }
         /* Turn on PWM */
         connect_to_pwm();
@@ -137,8 +161,12 @@ void scan_with_motor(uint8_t type) {
     while(state==state1) continue;
 }
 
-void scan_for_distance() {
+void scan_with_sonic() {
     scan_with_motor(0);
+}
+
+void scan_with_ldr() {
+    scan_with_motor(1);
 }
 
 void scan_at_given_angle() {
@@ -187,9 +215,17 @@ void scan_at_given_angle() {
 }
 
 void counting() {
-    
+    file_header_t* header;
+    uint16_t file_addr;
+    uint16_t i = 0;
     lcd_clear();
-    lcd_puts("dist:000; at:000");
-    while (state==state2) {
+    lcd_puts("reading...");
+    while (state==state4) {
+        enterLPM(mode0);
+        header = (file_header_t*)(SEG_D);
+        file_addr = header->address;
+        for (i = 0; i < header->size; i++) {
+            lcd_data(*(uint8_t*)file_addr);
+        }
     }
 }

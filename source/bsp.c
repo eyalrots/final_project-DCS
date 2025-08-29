@@ -101,10 +101,28 @@ void __adc_config() {
     ADC10CTL1 = INCH_3 + SHS_0 + ADC10SSEL_3 + CONSEQ_3;
     /* Enable P1.0 and P1.3 as analog input */
     ADC10AE0 = BIT0 + BIT3;
+    /* enable continuous mode */
+    ADC10DTC0 = ADC10CT;
     /* Four transfers: A3 -> A0 */
-    //ADC10DCT1 = 0x04;
+    ADC10DTC1 = BIT3;
     /* Set address for transfer buffer */
     ADC10SA = &adc_buffer;
+}
+
+void __adc_config_2(){
+
+  WDTCTL = WDTHOLD + WDTPW;                    // Stop WDT
+//   Timer_1_CTL =  MC_1 +Timer_1_SSEL2 ;             //Continious up CCR0 + SMCLK
+
+  ADC10CTL0 = ADC10ON + ADC10IE+ ADC10SHT_3 + SREF_0;   // ADC10 On/Enable           +
+                                                  // Interrupt enable          +
+                                                  // use 64 x ADC10CLK cycles  +
+                                                  // Set ref to Vcc and Gnd
+
+  ADC10CTL1 = INCH_0 + ADC10SSEL_3;                    // Input channel A0 (p1.0) + SMCLK
+  ADC10AE0 &=  ~0x08;                                 // P1.3 Analog enable
+  ADC10AE0 |=   0x01;                                 // P1.0 Analog enable
+
 }
 
 // UART

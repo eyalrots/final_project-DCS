@@ -102,6 +102,13 @@ void timer0_start_delay(unsigned int time_us);
 void generate_pwm_wave_with_Ton_at_freq(unsigned int on_time, unsigned int freq);
 void timer1_A2_start_capture();
 void generate_trigger_for_distance_sensor();
+// void read_adc_mem(uint16_t* mem_value);
+void enable_ADC(void);
+void disable_ADC(void);
+void ADCconfigLDR1();
+void ADCconfigLDR2();
+unsigned int sample_ADC();
+void flash_write_block(uint8_t* dst_addr, const uint8_t* src, uint16_t len);
 
 void print_b(char b, int start);
 void print_num(uint16_t num, int start, int len, char fill);

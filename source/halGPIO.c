@@ -9,8 +9,13 @@ extern volatile circular_buffer_t transmit_buffer;
 extern volatile uint8_t requested_angle;
 extern volatile uint8_t received_new_anlge_flag;
 extern volatile uint16_t current_distance;
+extern volatile uint16_t files[];
 
 volatile unsigned int count = 0x0;
+volatile uint16_t available_space;
+volatile uint16_t num_of_files;
+volatile uint8_t input_file_is_ok = 0x0;
+
 
 // System configuration
 void system_config() {
@@ -18,9 +23,32 @@ void system_config() {
    __timerA0_delay_config();
     __timer1_pwm_config();
     __timer1_A2_capture_config();
-    __adc_config();
+    // __adc_config();
+    __adc_config_2();
     __UART_config();
     lcd_init();
+    memset((uint8_t*)files, 0x0, 10);
+
+    /* init variables in memory */
+    FCTL3 = FWKEY;
+    FCTL1 = FWKEY + WRT;
+    available_space = *((uint16_t*)AVAILABLE_SPACE);
+    if (available_space > FILE_MEM_SIZE) {
+        *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
+        *((uint8_t*)NUM_OF_FILES) = 0;
+        available_space = FILE_MEM_SIZE;
+        num_of_files = 0;
+    }
+    num_of_files = *((uint8_t*)NUM_OF_FILES);
+    if (num_of_files > 10) {
+        *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
+        *((uint8_t*)NUM_OF_FILES) = 0;
+        available_space = FILE_MEM_SIZE;
+        num_of_files = 0;
+    }
+    FCTL1 = FWKEY;
+    FCTL3 = FWKEY + LOCK;
+
 
     // __timer0_A0_config();
 }
@@ -246,12 +274,57 @@ void timer0_start_delay(unsigned int time_us) {
 //-------------------------------------------------------------
 //                          ADC
 //-------------------------------------------------------------
-void adc10_start_conversion() {
-    ADC10CTL0 |= ADC10ON;
-    ADC10CTL0 |= ENC + ADC10SC;
+// void adc10_start_conversion() {
+//     ADC10CTL0 |= ADC10ON;
+//     ADC10CTL0 |= ENC + ADC10SC;
+// }
+// void adc10_stop_conversion() {
+//     ADC10CTL0 &= ~(ENC + ADC10SC);
+// }
+// void read_adc_mem(uint16_t* mem_value) {
+//     *mem_value = ADC10MEM * 330 / 1023;
+// }
+void enable_ADC(){
+ ADC10CTL0 |= ADC10ON + ENC + ADC10SC ; // interrupt enabled
+ ADC10CTL0 |= ADC10IE;
 }
-void adc10_stop_conversion() {
-    ADC10CTL0 &= ~(ENC + ADC10SC);
+
+void disable_ADC(){
+   ADC10CTL0 &= ~ENC ;
+   ADC10CTL0 &= ~ADC10ON ;             // adc off
+   ADC10CTL0 &= ~ADC10SC ;
+   ADC10CTL0 &= ~ADC10IE;
+}
+
+unsigned int sample_ADC(){
+    return (uint16_t)ADC10MEM;    // voltage from ADC
+}
+
+void ADCconfigLDR1(){
+    ADC10CTL1 = INCH_0+ADC10SSEL_3;    // Input channel A0 (p1.0) + SMCLK
+}
+
+void ADCconfigLDR2(){
+    ADC10CTL1 = INCH_3+ADC10SSEL_3;    // Input channel A3 (p1.3) + SMCLK
+}
+//-------------------------------------------------------------
+
+//-------------------------------------------------------------
+//                          FLASH
+//-------------------------------------------------------------
+void flash_write_block(uint8_t* dst_addr, const uint8_t* src, uint16_t len) {
+    // volatile uint8_t *dst = (uint8_t*)dst_addr;
+    uint16_t i;
+    while (FCTL3 & BUSY);
+    FCTL3 = FWKEY;                /* unlock */
+    FCTL1 = FWKEY + WRT;          /* write mode */
+    for (i = 0; i < len; i++){
+        while (FCTL3 & BUSY);
+        *dst_addr++ = *src++;
+    }
+    while (FCTL3 & BUSY);
+    FCTL1 = FWKEY;                /* clear WRT */
+    FCTL3 = FWKEY + LOCK;         /* relock */
 }
 //-------------------------------------------------------------
 
@@ -379,18 +452,28 @@ void __attribute__ ((interrupt(TIMER1_A1_VACTOR))) Timer1_A1_ISR (void)
 
 // ADC10 ISR
 #pragma vector = ADC10_VECTOR
-__interrupt void ADC_handler() {}
+__interrupt void ADC_handler() {
+    LPM0_EXIT;
+}
 
 // Uart Tx ISR
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR() {
-    static uint8_t bytes_sent = 0;
+    // static uint8_t bytes_sent = 0;
 
-    if (bytes_sent < 2) {
-        UCA0TXBUF = (uint8_t)(requested_angle >> (8*bytes_sent));
-        bytes_sent++;
-    } else {
-        bytes_sent = 0;
+    // if (bytes_sent < 2) {
+    //     UCA0TXBUF = (uint8_t)(requested_angle >> (8*bytes_sent));
+    //     bytes_sent++;
+    // } else {
+    //     bytes_sent = 0;
+    //     LPM0_EXIT;
+    // }
+    if (state==state4) {
+        if (input_file_is_ok) {
+            UCA0TXBUF = 0x06; /*ACK*/
+        } else {
+            UCA0TXBUF = 0x25; /*NAK*/
+        }
         LPM0_EXIT;
     }
 }
@@ -398,11 +481,76 @@ __interrupt void USCI0TX_ISR() {
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR() {
     static uint8_t input_flag = 0;
-
+    /* 1 -> angle ; 0 -> file */
+    static uint8_t is_angle = 0; 
+    /* current character read -> for file reading */
+    uint8_t cur_char;
+    /* current header file */
+    file_header_t *cur_header;
+    static uint8_t idx = 0;
+    int i;
+    
     if (input_flag) {
-        requested_angle = UCA0RXBUF;
-        input_flag = !input_flag;
-        received_new_anlge_flag = 1;
+        if (is_angle) {
+            requested_angle = UCA0RXBUF;
+            input_flag = !input_flag;
+            received_new_anlge_flag = 1;
+            is_angle = 0;
+        } else {
+            // lcd_clear();
+            cur_char = UCA0RXBUF;
+            // lcd_data(0x30+idx);
+            if (idx < (sizeof(file_header_t)-sizeof(cur_header->address))) {
+                *((uint8_t*)cur_header + idx++) = cur_char;
+                input_file_is_ok = 0;
+            }
+            /* set header and read file */
+            else if (idx == (sizeof(file_header_t)-sizeof(cur_header->address))) {
+                print_num(cur_header->size, 10, 5, 0x30);
+                /* check available space */
+                if (cur_header->size > available_space || num_of_files == 10) {
+                    // if (idx == cur_header->size) {
+                    //     input_flag = !input_flag;
+                    //     idx = 0;
+                    //     return;
+                    // }
+                    // return;
+                } else {
+                /* set address of file in memory */
+                cur_header->address = START_OF_FILES + FILE_MEM_SIZE - available_space + 1;
+                /* update available space according to new file size */
+                available_space += cur_header->size;
+                num_of_files++;
+                /* update info data in flash */
+                FCTL3 = FWKEY;
+                FCTL1 = FWKEY + WRT;
+                /* insert header into information memory */
+                memcpy((uint8_t*)(SEG_D + sizeof(file_header_t)*num_of_files), cur_header, sizeof(file_header_t));
+                /* update data */
+                *((uint16_t*)AVAILABLE_SPACE) = available_space;
+                *((uint8_t*)NUM_OF_FILES) = num_of_files;
+                FCTL1 = FWKEY;
+                FCTL3 = FWKEY + LOCK;
+                }
+            } 
+            /* read file content */
+            else {
+                /* check if file reading is done */
+                if (idx == cur_header->size) {
+                    input_flag = !input_flag;
+                    idx = 0;
+                    input_file_is_ok = 1;
+                    LPM0_EXIT;
+                    return;
+                }
+                /* insert file characters to flash memory */
+                FCTL3 = FWKEY;
+                FCTL1 = FWKEY + WRT;
+                *(uint8_t*)(cur_header->address + idx++) = cur_char;
+                FCTL1 = FWKEY;
+                FCTL3 = FWKEY + LOCK;
+            }
+        }
     } else {
         switch (UCA0RXBUF) {
             case '1':
@@ -411,7 +559,15 @@ __interrupt void USCI0RX_ISR() {
             case '2':
                 state = state2;
                 input_flag = !input_flag;
+                is_angle = 1;
                 break;
+            case '3':
+                state = state3;
+                break;
+            case '4':
+                state = state4;
+                input_flag = !input_flag;
+                is_angle = 0;
             default:
                 state = state0;
                 break;
@@ -419,22 +575,24 @@ __interrupt void USCI0RX_ISR() {
     }
 
     // exit lpm
-    switch (lpm_mode) {
-        case mode0:
-            LPM0_EXIT;
-            break;
-        case mode1:
-            LPM1_EXIT;
-            break;
-        case mode2:
-            LPM2_EXIT;
-            break;
-        case mode3:
-            LPM3_EXIT;
-            break;
-        case mode4:
-            LPM4_EXIT;
-            break;
+    if (input_flag && !is_angle) {
+        switch (lpm_mode) {
+            case mode0:
+                LPM0_EXIT;
+                break;
+            case mode1:
+                LPM1_EXIT;
+                break;
+            case mode2:
+                LPM2_EXIT;
+                break;
+            case mode3:
+                LPM3_EXIT;
+                break;
+            case mode4:
+                LPM4_EXIT;
+                break;
+        }
     }
 }
 //-------------------------------------------------------------

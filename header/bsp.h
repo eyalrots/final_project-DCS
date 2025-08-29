@@ -11,6 +11,14 @@
 #define   LCD_DATA         0xF0
 #define   debounceVal      250
 #define   SMCLK            1095870
+#define   SEG_D            0x1000
+#define   SEG_C            0x1040
+#define   SEG_B            0x1080
+#define   START_OF_FILES   0xF600 /* start of segment 4 */
+#define   END_OF_FILES     0xFDFF /*  end of segment 1  */
+#define   FILE_MEM_SIZE    0x800  /*        2KB         */
+#define   AVAILABLE_SPACE  0x107E /* 2B number @ end of sement C */
+#define   NUM_OF_FILES     0x107D /* B number of files in memory */
 
 // LCDs abstraction
 #define LCD_DATA_WRITE      P1OUT
@@ -63,6 +71,7 @@ void __timerA0_delay_config();
 void __timer1_pwm_config();
 void __timer1_A2_capture_config();
 void __adc_config();
+void __adc_config_2();
 void __UART_config();
 
 typedef enum {
@@ -84,6 +93,19 @@ typedef enum {
     mode3,
     mode4
 }SYS_mode_t;
+
+typedef enum {
+    text,
+    script
+}file_type_t;
+
+/* file object */
+typedef struct __attribute__ ((packed)) file {
+    uint16_t size;
+    uint8_t name[7];
+    file_type_t type;
+    uint16_t address;
+}file_header_t;
 
 // distance sample consists of distance[cm] and angle[deg].
 typedef struct __attribute__ ((packed)) distance_sample {

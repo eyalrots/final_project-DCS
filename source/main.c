@@ -24,10 +24,17 @@ int main() {
                 enterLPM(mode0);
                 break;
             case state1:
-                scan_for_distance();
+                scan_with_sonic();
                 break;
             case state2:
                 scan_at_given_angle();
+                break;
+            case state3:
+                scan_with_ldr();
+                break;
+            case state4:
+                counting();
+                break;
             default:
                 state=state0;
                 break;
