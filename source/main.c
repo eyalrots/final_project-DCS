@@ -21,19 +21,25 @@ int main() {
     while (1) {
         switch (state) {
             case state0:
+                lcd_clear();
                 enterLPM(mode0);
                 break;
             case state1:
                 scan_with_sonic();
+                state=state0;
                 break;
             case state2:
                 scan_at_given_angle();
+                state=state0;
                 break;
             case state3:
                 scan_with_ldr();
+                state=state0;
                 break;
-            case state4:
+            case state5:
+                print_num(4, 1, 1, 0x30);
                 counting();
+                state=state0;
                 break;
             default:
                 state=state0;

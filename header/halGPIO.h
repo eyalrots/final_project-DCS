@@ -78,6 +78,21 @@ extern void lcd_strobe();
 extern void DelayMs(unsigned int);
 extern void DelayUs(unsigned int);
 
+/* open flash for reading / writing */
+inline void open_flash(void) {
+    /* unlock */
+    FCTL3 = FWKEY;
+    /* write mode */
+    FCTL1 = FWKEY + WRT;
+}
+/* close flash */
+inline void close_flash(void) {
+    /* clear WRT */
+    FCTL1 = FWKEY;
+    /* relock */
+    FCTL3 = FWKEY + LOCK;
+}
+
 // Enable Transmission to PC
 inline void uart_tx_enable(void) {
     IE2 |= UCA0TXIE;

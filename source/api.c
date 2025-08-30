@@ -6,6 +6,7 @@ extern volatile SYS_mode_t lpm_mode;
 
 extern volatile circular_buffer_t transmit_buffer;
 extern volatile uint8_t adc_buffer[];
+extern volatile uint8_t cur_char;
 
 volatile unsigned int echo_rising_edge, echo_falling_edge;
 volatile uint8_t requested_angle;
@@ -157,8 +158,6 @@ void scan_with_motor(uint8_t type) {
         transmit_buffer.read = transmit_buffer.write;
         transmit_buffer.size = 0;
     }
-
-    while(state==state1) continue;
 }
 
 void scan_with_sonic() {
@@ -215,17 +214,22 @@ void scan_at_given_angle() {
 }
 
 void counting() {
-    file_header_t* header;
+    // file_header_t* header;
     uint16_t file_addr;
     uint16_t i = 0;
+    uint8_t header[25];
     lcd_clear();
     lcd_puts("reading...");
-    while (state==state4) {
-        enterLPM(mode0);
-        header = (file_header_t*)(SEG_D);
-        file_addr = header->address;
-        for (i = 0; i < header->size; i++) {
-            lcd_data(*(uint8_t*)file_addr);
-        }
+    while (state==state5) {    
+        open_flash();
+        i = *(uint16_t*)SEG_D;
+        close_flash();
+        timer0_start_delay(0xffff);
+        print_num(i, 16, 5, 0x30);
+        // header = (file_header_t*)(SEG_D);
+        // file_addr = header->address;
+        // for (i = 0; i < header->size; i++) {
+        //     lcd_data(*(uint8_t*)file_addr);
+        // }
     }
 }

@@ -15,12 +15,14 @@ volatile unsigned int count = 0x0;
 volatile uint16_t available_space;
 volatile uint16_t num_of_files;
 volatile uint8_t input_file_is_ok = 0x0;
+volatile uint8_t cur_char;
+// volatile uint8_t bytes_read = 0x0;
 
 
 // System configuration
 void system_config() {
     __GPIO_config();
-   __timerA0_delay_config();
+    __timerA0_delay_config();
     __timer1_pwm_config();
     __timer1_A2_capture_config();
     // __adc_config();
@@ -28,27 +30,26 @@ void system_config() {
     __UART_config();
     lcd_init();
     memset((uint8_t*)files, 0x0, 10);
-
+    
     /* init variables in memory */
-    FCTL3 = FWKEY;
-    FCTL1 = FWKEY + WRT;
+    open_flash();
     available_space = *((uint16_t*)AVAILABLE_SPACE);
-    if (available_space > FILE_MEM_SIZE) {
+    num_of_files = *((uint8_t*)NUM_OF_FILES);
+    if (available_space > FILE_MEM_SIZE || (available_space==0 && num_of_files<=0)) {
         *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
         *((uint8_t*)NUM_OF_FILES) = 0;
         available_space = FILE_MEM_SIZE;
         num_of_files = 0;
     }
-    num_of_files = *((uint8_t*)NUM_OF_FILES);
     if (num_of_files > 10) {
         *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
         *((uint8_t*)NUM_OF_FILES) = 0;
         available_space = FILE_MEM_SIZE;
         num_of_files = 0;
     }
-    FCTL1 = FWKEY;
-    FCTL3 = FWKEY + LOCK;
-
+    close_flash();
+    
+    
 
     // __timer0_A0_config();
 }
@@ -445,10 +446,10 @@ void __attribute__ ((interrupt(TIMER1_A1_VACTOR))) Timer1_A1_ISR (void)
             break;
         case TA1IV_TAIFG:
             break;
-        default:
+            default:
             break;
+        }
     }
-}
 
 // ADC10 ISR
 #pragma vector = ADC10_VECTOR
@@ -484,12 +485,16 @@ __interrupt void USCI0RX_ISR() {
     /* 1 -> angle ; 0 -> file */
     static uint8_t is_angle = 0; 
     /* current character read -> for file reading */
-    uint8_t cur_char;
+    // uint8_t cur_char;
     /* current header file */
-    file_header_t *cur_header;
-    static uint8_t idx = 0;
-    int i;
+    uint8_t* cur_header;
+    static uint8_t bytes_read = 0x0;
+    static uint16_t file_idx = 0x0;
+    static uint8_t* file_addr = NULL;
+    static uint8_t read_file_content = 0;
+    uint16_t temp;
     
+    print_num(UCA0RXBUF, 3, 3, 0x30);
     if (input_flag) {
         if (is_angle) {
             requested_angle = UCA0RXBUF;
@@ -497,59 +502,41 @@ __interrupt void USCI0RX_ISR() {
             received_new_anlge_flag = 1;
             is_angle = 0;
         } else {
-            // lcd_clear();
             cur_char = UCA0RXBUF;
-            // lcd_data(0x30+idx);
-            if (idx < (sizeof(file_header_t)-sizeof(cur_header->address))) {
-                *((uint8_t*)cur_header + idx++) = cur_char;
-                input_file_is_ok = 0;
+            
+            if (read_file_content) {
+                if (file_idx>=((file_header_t*)cur_header)->size-1) {
+                    input_flag = !input_flag;
+                    read_file_content = 0;
+                    state=state0;
+                    // print_num(available_space, 16, 8, 0x30);
+                    // print_num(num_of_files, 5, 3, 0x30);
+                    // LPM0_EXIT;
+                }
+                // lcd_data(cur_char);
+                open_flash();
+                file_addr[file_idx++] = cur_char;
+                close_flash();
             }
-            /* set header and read file */
-            else if (idx == (sizeof(file_header_t)-sizeof(cur_header->address))) {
-                print_num(cur_header->size, 10, 5, 0x30);
-                /* check available space */
-                if (cur_header->size > available_space || num_of_files == 10) {
-                    // if (idx == cur_header->size) {
-                    //     input_flag = !input_flag;
-                    //     idx = 0;
-                    //     return;
-                    // }
-                    // return;
-                } else {
-                /* set address of file in memory */
-                cur_header->address = START_OF_FILES + FILE_MEM_SIZE - available_space + 1;
-                /* update available space according to new file size */
-                available_space += cur_header->size;
-                num_of_files++;
-                /* update info data in flash */
-                FCTL3 = FWKEY;
-                FCTL1 = FWKEY + WRT;
-                /* insert header into information memory */
-                memcpy((uint8_t*)(SEG_D + sizeof(file_header_t)*num_of_files), cur_header, sizeof(file_header_t));
-                /* update data */
+            else if (bytes_read < 10) {
+                *(cur_header + bytes_read++) = cur_char;
+                input_file_is_ok = 0;
+            } else if (bytes_read == 10) {
+                // print_num(cur_char, 10, 4, 0x30);
+                ((file_header_t*)cur_header)->address = START_OF_FILES + FILE_MEM_SIZE - available_space + 1;
+                file_addr = (uint8_t*)((file_header_t*)cur_header)->address;
+                available_space -= ((file_header_t*)cur_header)->size;
+                num_of_files++;     
+                file_idx = 0;
+                read_file_content = 1;
+                open_flash();
+                memcpy(((uint8_t*)(SEG_D+sizeof(file_header_t)*num_of_files)), cur_header, sizeof(file_header_t));
                 *((uint16_t*)AVAILABLE_SPACE) = available_space;
                 *((uint8_t*)NUM_OF_FILES) = num_of_files;
-                FCTL1 = FWKEY;
-                FCTL3 = FWKEY + LOCK;
-                }
-            } 
-            /* read file content */
-            else {
-                /* check if file reading is done */
-                if (idx == cur_header->size) {
-                    input_flag = !input_flag;
-                    idx = 0;
-                    input_file_is_ok = 1;
-                    LPM0_EXIT;
-                    return;
-                }
-                /* insert file characters to flash memory */
-                FCTL3 = FWKEY;
-                FCTL1 = FWKEY + WRT;
-                *(uint8_t*)(cur_header->address + idx++) = cur_char;
-                FCTL1 = FWKEY;
-                FCTL3 = FWKEY + LOCK;
+                file_addr[file_idx++] = cur_char;
+                close_flash();
             }
+            // print_num(cur_header[bytes_read-1], bytes_read*2, 2, 0x30);
         }
     } else {
         switch (UCA0RXBUF) {
@@ -567,7 +554,12 @@ __interrupt void USCI0RX_ISR() {
             case '4':
                 state = state4;
                 input_flag = !input_flag;
+                read_file_content = 0;
                 is_angle = 0;
+                break;
+            case '5':
+                state=state5;
+                break;
             default:
                 state = state0;
                 break;
@@ -575,7 +567,7 @@ __interrupt void USCI0RX_ISR() {
     }
 
     // exit lpm
-    if (input_flag && !is_angle) {
+    // if (input_flag && !is_angle) {
         switch (lpm_mode) {
             case mode0:
                 LPM0_EXIT;
@@ -593,6 +585,6 @@ __interrupt void USCI0RX_ISR() {
                 LPM4_EXIT;
                 break;
         }
-    }
+    // }
 }
 //-------------------------------------------------------------

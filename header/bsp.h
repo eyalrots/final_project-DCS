@@ -19,6 +19,7 @@
 #define   FILE_MEM_SIZE    0x800  /*        2KB         */
 #define   AVAILABLE_SPACE  0x107E /* 2B number @ end of sement C */
 #define   NUM_OF_FILES     0x107D /* B number of files in memory */
+#define   HEADER_SIZE      10
 
 // LCDs abstraction
 #define LCD_DATA_WRITE      P1OUT
