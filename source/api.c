@@ -220,10 +220,27 @@ void scan_at_given_angle() {
 }
 
 void erase_info() {
+    uint8_t* temp_ptr;
+    uint8_t temp_buffer[40];
+    uint8_t i = 0;
+
     lcd_puts("erasing segs...");
+    /* save important data form SEG B */
+    temp_ptr = (uint8_t*)LDR_CALIB;
+    for (i = 0; i < 40; i++) {
+        temp_buffer[i] = *temp_ptr++;
+    }
     erase_seg((uint8_t*)SEG_B);
     erase_seg((uint8_t*)SEG_C);
     erase_seg((uint8_t*)SEG_D);
+    temp_ptr = (uint8_t*)LDR_CALIB;
+    open_flash();
+    /* rewrite data to segment B */
+    for (i = 0; i < 40; i++) {
+        *temp_ptr++ = temp_buffer[i];
+        while(FCTL3 & BUSY);
+    }
+    close_flash();
     available_space = FILE_MEM_SIZE;
     num_of_files = 0;
     file_location = SEG_4;

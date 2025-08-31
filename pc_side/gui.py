@@ -5,45 +5,19 @@ import math
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-#-------------------------------servo------------------------------------------
-# def recive_object_loction(distances, angles, threshold=150):
-#     objects = []
-#     object_distance = []
-#     object_angle = []
-#     prev_distance = distances[0]
-#     prev_angle = angles[0]
-#     big_jump = 20
-    
-#     for i in range(1, (len(distances)-1)):
-#         if prev_distance < threshold:
-#             object_distance.append(prev_distance)
-#             object_angle.append(prev_angle)
-#         if  abs(prev_angle-distances[i]) >= big_jump and len(object_distance) > 0:
-#             angle_span = (object_angle[-1] - object_angle[0]) % 180
-#             center_angle = (object_angle[0] + angle_span/2.0) % 180
-#             center_distance = object_distance[len(object_distance)//2]
-#             length_cm = center_distance * math.pi * angle_span / 180.0
-#             if length_cm == 0: length_cm = 1  # avoid zero-length
-#             objects.append((length_cm, center_angle, center_distance))
-#             object_distance = []
-#             object_angle = []
-#         prev_distance = distances[i]
-#         prev_angle = distances[i]
-    
-#     # flush last cluster if still open
-#     if len(object_distance) > 0:
-#         if prev_distance < threshold:
-#             object_distance.append(prev_distance)
-#             object_angle.append(prev_angle)
-#         angle_span = (object_angle[-1] - object_angle[0]) % 180
-#         center_angle = (object_angle[0] + angle_span/2.0) % 180
-#         center_distance = object_distance[len(object_distance)//2]
-#         length_cm = center_distance * math.pi * angle_span / 180.0
-#         objects.append((length_cm, center_angle, center_distance))
-    
-#     return objects
-import math
+#-------------------------------constants---------------------------------------
+FILES = ["test1.txt", "test2.txt", "test3.txt", "text2.txt", "text3.txt", "text4.txt", "scr1.txt", "scr2.txt", "scr3.txt"]
+SCRIPTS = ["scr1.txt", "scr2.txt", "scr3.txt"]
+OPCODES = {
+    'inc_lcd':   0x01, 'dec_lcd':   0x02, 'rra_lcd':   0x03, 'set_delay': 0x04,
+    'clear_lcd': 0x05, 'servo_deg': 0x06, 'servo_scan':0x07, 'sleep':     0x08,
+}
+OPERANDS = {
+    'inc_lcd':1, 'dec_lcd':1, 'rra_lcd':1, 'set_delay':1,
+    'clear_lcd':0, 'servo_deg':1, 'servo_scan':2, 'sleep':0,
+}
 
+#-------------------------------servo------------------------------------------
 def _calculate_object_properties(readings):
     """Helper function to process a list of (angle, distance) readings."""
     # Extract angles and distances
@@ -216,6 +190,62 @@ def get_distance_data(ser, length):
     return distances, angles
 
 
+def _parse_u8(tok: str) -> int:
+    tok = tok.strip()
+    base = 16 if tok.lower().startswith("0x") else 10
+    v = int(tok, base)
+    if not (0 <= v <= 255):
+        raise ValueError(f"operand {tok!r} out of range (0..255)")
+    return v
+
+def _tokens(line: str):
+    line = line.split('#', 1)[0].strip()     # strip inline comments
+    if not line:
+        return []
+    return line.replace(',', ' ').split()    # allow commas or spaces
+
+def script_interpreter(in_path: str, out_path: str = "script.txt", per_line: bool = True) -> int:
+    """
+    Convert text script -> TEXT hex bytes.
+    If per_line=True: write bytes for each command on its own line.
+    If per_line=False: write all bytes on one line.
+    Returns total byte count.
+    """
+    total_bytes = 0
+    all_bytes = []
+
+    with open(in_path, "r", encoding="utf-8") as src, \
+         open(out_path, "w", encoding="utf-8", newline="") as out:
+
+        for lineno, line in enumerate(src, 1):
+            parts = _tokens(line)
+            if not parts:
+                if per_line: out.write("\n")  # keep blank lines
+                continue
+
+            cmd, *args = parts
+            if cmd not in OPCODES:
+                raise ValueError(f"Line {lineno}: unknown command '{cmd}'")
+
+            need = OPERANDS.get(cmd, 0)
+            if len(args) != need:
+                raise ValueError(f"Line {lineno}: '{cmd}' needs {need} operand(s), got {len(args)}")
+
+            # Build this line's byte sequence
+            line_bytes = [OPCODES[cmd]] + [_parse_u8(a) for a in args]
+            total_bytes += len(line_bytes)
+
+            if per_line:
+                out.write(" ".join(f"{b:02X}" for b in line_bytes) + "\n")
+            else:
+                all_bytes.extend(line_bytes)
+
+        if not per_line and all_bytes:
+            out.write(" ".join(f"{b:02X}" for b in all_bytes) + "\n")
+
+    return total_bytes
+
+
 def send_file(ser: serial.Serial, file_name: str):
     """
     Sends a file with a custom 10-byte header over an existing serial connection.
@@ -232,6 +262,14 @@ def send_file(ser: serial.Serial, file_name: str):
     Returns:
         bool: True if sending was successful, False otherwise.
     """
+    # --- 0. Text or Script? ---
+    if (os.path.basename(file_name) in SCRIPTS):
+        print(f"script file: {os.path.basename(file_name)}")
+        script_interpreter(file_name)
+        file_name = "script.txt"
+        f_type = 1
+    else:
+        f_type = 0
     # --- 1. Validate file and get its properties ---
     try:
         file_size = os.path.getsize(file_name)
@@ -244,7 +282,7 @@ def send_file(ser: serial.Serial, file_name: str):
         return False
         
     print(f"File: '{os.path.basename(file_name)}', Size: {file_size} bytes")
-    time.sleep(2)
+    time.sleep(0.01)
     # --- 2. Construct the 10-byte header ---
     # Part 1: File Size (2 bytes, little-endian)
     header = file_size.to_bytes(2, byteorder='little')
@@ -253,35 +291,26 @@ def send_file(ser: serial.Serial, file_name: str):
     name_bytes = os.path.basename(file_name).encode('utf-8')
     header += name_bytes[:7].ljust(7, b'\x00')
     
-    # Part 3: File Type (1 byte, value 0)
-    header += (0).to_bytes(1, byteorder='little')
+    # Part 3: File Type (1 byte)
+    header += (f_type).to_bytes(1, byteorder='little')
     
     # --- 3. Send data ---
     try:
         # Send the header
         print(f"Sending header over '{ser.name}'...")
-        # ser.write(header)
-         # --- THIS IS THE MODIFIED SECTION ---
-        print(f"Sending header over '{ser.name}' one byte at a time...")
         for byte_of_header in header:
             ser.write(bytes([byte_of_header])) # Convert int back to a bytes object
-            print(f"  > Sent header byte: {hex(byte_of_header)}")
             time.sleep(0.01) # Wait for 1 second
-        print(header.decode())
         time.sleep(0.01)
         # Send the file content
         print("Sending file content...")
         bytes_sent = 0
         with open(file_name, 'rb') as f:
-            # while chunk := f.read(64): # Read in chunks for better performance
-            #     ser.write(chunk)
-            #     bytes_sent += len(chunk)
             while True:
                 byte_to_send = f.read(1) # Read a single byte
                 if not byte_to_send:
                     break # End of file
                 ser.write(byte_to_send)
-                print(f"  > Sent file byte: {hex(byte_to_send[0])}")
                 time.sleep(0.05)
                 bytes_sent += 1
         
@@ -320,16 +349,6 @@ def main():
             plot_objects(distances, angles)
         
         if choice == '2':
-            # ser.write(choice.encode())
-            # angle = int(input("Insert angle: "))
-            # if not 0 <= angle <= 180:
-            #     print("Angle out of range.")
-            #     continue
-            # else:
-            #     byte_data = angle.to_bytes(1, "little")
-            #     ser.write(byte_data)
-            #     distances = get_distance_data(ser, 20)
-            #     print(distances)
             telemeter(ser)
 
         if choice == '3':
@@ -339,16 +358,20 @@ def main():
                 plot_objects(distances, angles)
 
         if choice == '4':
+                file_name = str(input("select file name to send: "))
+                while (file_name not in FILES):
+                    print(f"{file_name} does not exists")
+                    file_name = str(input("select file name to send: "))
                 ser.write(choice.encode())
-                send_file(ser, "test1.txt")
-                time.sleep(1)
+                file_name = os.path.join(".", "Library", file_name)
+                print(f"sending file {file_name}")
+                send_file(ser, file_name)
                 ack = ser.read(1)
-                print(ack)
-                # ser.write(choice.encode())
-                # send_file(ser, "test2.txt")
-                # time.sleep(1)
-                # ser.write(choice.encode())
-                # send_file(ser, "test3.txt")
+                if (ack==b'0x15'):
+                    print("Not enough space!")
+                    break
+                else:
+                    print("file saved successfully!")
         
         if choice == '5':
             print("state 5")
