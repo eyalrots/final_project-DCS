@@ -52,7 +52,7 @@ int main() {
                 state=state0;
                 break;
             case state7:
-                // angle_with_ldr();
+                detect_both_sensors();
                 break;
             case state8:
                 // calibrate_ldr(2);

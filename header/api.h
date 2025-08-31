@@ -15,5 +15,6 @@ void file_mode();
 void erase_info();
 void calibrate_ldr();
 void read_calibration();
+void detect_both_sensors();
 
 #endif

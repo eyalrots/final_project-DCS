@@ -526,3 +526,42 @@ void read_calibration() {
         enterLPM(mode0);
     }
 }
+
+void detect_both_sensors() {
+    uint8_t data[5];
+    uint8_t cur_angle = 0;
+    uint16_t sonic_dist = 0;
+    uint16_t ldr_dist = 0;
+    
+    lcd_clear();
+    lcd_puts("ldr:000;son:000");
+    go_to_zero();
+    
+   while (cur_angle <= 180) {
+        // move motor to the next angle
+        move_motor_to_new_angle(cur_angle);
+        /* Turn off PWM */
+        disconnect_from_pwm();
+        // wait for a bit, let everythong settle down...
+        timer0_start_delay(0x4000, 0);
+        // get distance
+        get_distance_from_sensor(&sonic_dist);
+        calculate_distance_ldr(&ldr_dist);
+        /* Turn on PWM */
+        connect_to_pwm();
+        turn_on_pwm();
+        // print data on lcd
+        print_num(sonic_dist, 8, 3, 0x30);
+        print_num(ldr_dist, 16, 3, 0x30);
+        // create sample object
+        *data = cur_angle;
+        *((uint16_t*)(data+1)) = sonic_dist;
+        *((uint16_t*)(data+3)) = ldr_dist;
+        // insert sample to transmit buffer
+        uart_write(data, 5);
+        // set next angle = current angle + step
+        cur_angle += SCAN_STEP;
+    }
+    disconnect_from_pwm();
+    turn_off_pwm();
+}

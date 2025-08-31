@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from scipy.signal import find_peaks
 from matplotlib.gridspec import GridSpec
+import struct
 
 #-------------------------------constants---------------------------------------
 FILES = ["test1.txt", "test2.txt", "test3.txt", "text2.txt", "text3.txt", "text4.txt", 
@@ -147,8 +148,6 @@ def plot_objects(distances, angles):
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
 
-
-
 def telemeter(ser, command='2'):
     if (command=='2'):
         angle = int(input("Insert angle:/n (enter -1 to exit) "))
@@ -161,6 +160,53 @@ def telemeter(ser, command='2'):
             break
         print(f"{int.from_bytes(distance, byteorder="little"):03}\r", end="")
 
+
+def read_from_serial_port(ser, length=900):
+    """
+    Reads a specific number of bytes from a serial port into one large bytearray.
+
+    This function continuously checks the serial port's input buffer and reads
+    data in chunks as it becomes available, extending a single bytearray
+    until the desired number of bytes (`length`) has been received.
+
+    Args:
+        ser: An active pySerial serial port object.
+        length: The total number of bytes to read.
+
+    Returns:
+        A bytearray containing the concatenated data read from the port.
+    """
+    # Use bytearray() to efficiently build one single, large array of bytes.
+    raw_samples = bytearray()
+    received = 0
+    
+    print(f"Attempting to read {length} bytes from the serial port...")
+
+    # Using tqdm for a progress bar is helpful for user feedback.
+    # Note: You must have tqdm installed (`pip install tqdm`)
+    from tqdm import tqdm
+    with tqdm(total=length, unit='B', unit_scale=True, desc='Receiving Data') as pbar:
+        while received < length:
+            # Check how many bytes are waiting in the input buffer
+            if ser.in_waiting > 0:
+                # Read all available bytes from the buffer
+                data_received = ser.read(ser.in_waiting)
+                
+                # Use .extend() to add the new bytes to the end of our bytearray.
+                # This is the correct way to build a single array.
+                # Using .append() would create a list of byte objects.
+                raw_samples.extend(data_received)
+                
+                received += len(data_received)
+                pbar.update(len(data_received))
+            else:
+                # A small sleep prevents this loop from using 100% CPU
+                # while waiting for data.
+                time.sleep(0.01)
+
+    print("\nFinished reading data.")
+    # If more data was received than expected, trim it.
+    return raw_samples[:length]
 
 def get_distance_data(ser, length):
     raw_samples = []
@@ -206,6 +252,58 @@ def get_distance_data(ser, length):
             print("Warning: one sample is incomplete.")
     
     return distances, angles
+
+def parse_sensor_data(data: bytes) -> tuple[list[int], list[int], list[int]]:
+    """
+    Parses a 900-byte array from a sensor into three lists.
+
+    The input data is expected to contain 180 samples, with each sample
+    being 5 bytes long.
+
+    The structure for each 5-byte sample is as follows:
+    - Byte 1      (index 0):   Angle (unsigned 8-bit integer)
+    - Bytes 2, 3  (index 1-2): Sonic Distance (unsigned 16-bit integer, little-endian)
+    - Bytes 4, 5  (index 3-4): LDR Data (unsigned 16-bit integer, little-endian)
+
+    Args:
+        data: A bytes or bytearray object of exactly 900 bytes.
+
+    Returns:
+        A tuple containing three lists: (angles, distances, ldr_values).
+        - angles: A list of 180 angle values.
+        - distances: A list of 180 sonic distance values.
+        - ldr_values: A list of 180 LDR sensor values.
+        
+    Raises:
+        ValueError: If the input data is not 900 bytes long.
+    """
+    if len(data) != 900:
+        raise ValueError(f"Input data must be 900 bytes long, but got {len(data)} bytes.")
+
+    angles = []
+    distances = []
+    ldr_values = []
+
+    # Define the format string for a single 5-byte sample.
+    # '<' specifies little-endian byte order.
+    # 'B' is for an unsigned char (1 byte) -> angle.
+    # 'H' is for an unsigned short (2 bytes) -> distance and ldr_value.
+    sample_format = '<BHH'
+    sample_size = struct.calcsize(sample_format)  # This will be 5 bytes
+
+    # Iterate through the byte array in chunks of 5 bytes
+    for i in range(0, len(data), sample_size):
+        # Get a 5-byte chunk for one complete sample
+        chunk = data[i:i + sample_size]
+        
+        # Unpack the chunk into the three variables according to the format
+        angle, distance, ldr_value = struct.unpack(sample_format, chunk)
+        
+        angles.append(angle)
+        distances.append(distance)
+        ldr_values.append(ldr_value)
+
+    return angles, distances, ldr_values
 
 
 
@@ -523,7 +621,14 @@ def main():
             ser.write(choice.encode())
 
         if choice == '7':
-            telemeter(ser)
+            ser.write(choice.encode())
+            byte_data = read_from_serial_port(ser, 900)
+            angles, distances, ldr_data = parse_sensor_data(byte_data)
+            print(f"distances: {distances[0:5]} angles: {angles[0:5]}")
+            plot_objects(distances, angles)
+            sources = find_light_sources(ldr_data, LDR_CALIB)
+            print(sources)
+
 
         if choice == '8':
             print("LDR2 calibration...")
