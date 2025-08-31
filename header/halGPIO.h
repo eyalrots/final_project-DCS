@@ -115,7 +115,7 @@ void uart_write(uint8_t *buffer, uint16_t size);
 
 void turn_off_pwm();
 void turn_on_pwm();
-void timer0_start_delay(unsigned int time_us);
+void timer0_start_delay(unsigned int time_us, uint8_t unit);
 void generate_pwm_wave_with_Ton_at_freq(unsigned int on_time, unsigned int freq);
 void timer1_A2_start_capture();
 void generate_trigger_for_distance_sensor();

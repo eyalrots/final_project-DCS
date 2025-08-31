@@ -26,6 +26,7 @@ int main() {
                 break;
             case state1:
                 scan_with_sonic();
+                lcd_clear();
                 state=state0;
                 break;
             case state2:
@@ -34,21 +35,28 @@ int main() {
                 break;
             case state3:
                 scan_with_ldr();
+                lcd_clear();
                 state=state0;
                 break;
             case state4:
                 // print_num(4, 1, 1, 0x30);
                 // counting();
                 // state=state0;
+                script_mode();
                 break;
             case state5:
                 file_mode();
                 break;
             case state6:
-                counting();
+                erase_info();
+                state=state0;
                 break;
             case state7:
-                erase_info();
+                // angle_with_ldr();
+                break;
+            case state8:
+                // calibrate_ldr(2);
+                read_calibration();
                 break;
             default:
                 state=state0;

@@ -1,148 +1,166 @@
 import os
+import sys
+import threading
 import time
 import serial
 import math
 import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
+from scipy.signal import find_peaks
+from matplotlib.gridspec import GridSpec
 
 #-------------------------------constants---------------------------------------
-FILES = ["test1.txt", "test2.txt", "test3.txt", "text2.txt", "text3.txt", "text4.txt", "scr1.txt", "scr2.txt", "scr3.txt"]
-SCRIPTS = ["scr1.txt", "scr2.txt", "scr3.txt"]
+FILES = ["test1.txt", "test2.txt", "test3.txt", "text2.txt", "text3.txt", "text4.txt", 
+         "scr1.txt", "scr2.txt", "scr3.txt", "scr4.txt"]
+SCRIPTS = ["scr1.txt", "scr2.txt", "scr3.txt", "scr4.txt"]
 OPCODES = {
-    'inc_lcd':   0x01, 'dec_lcd':   0x02, 'rra_lcd':   0x03, 'set_delay': 0x04,
-    'clear_lcd': 0x05, 'servo_deg': 0x06, 'servo_scan':0x07, 'sleep':     0x08,
+    'inc_lcd':   1, 'dec_lcd':   2, 'rra_lcd':   3, 'set_delay': 4,
+    'clear_lcd': 5, 'servo_deg': 6, 'servo_scan':7, 'sleep':     8,
 }
 OPERANDS = {
     'inc_lcd':1, 'dec_lcd':1, 'rra_lcd':1, 'set_delay':1,
     'clear_lcd':0, 'servo_deg':1, 'servo_scan':2, 'sleep':0,
 }
+LDR_CALIB = [200, 240, 260, 270, 285, 320, 330, 350, 380, 400]
 
 #-------------------------------servo------------------------------------------
 def _calculate_object_properties(readings):
     """Helper function to process a list of (angle, distance) readings."""
-    # Extract angles and distances
     object_angles = [r[0] for r in readings]
     object_distances = [r[1] for r in readings]
 
-    # Calculate the angle span and center angle
-    angle_span = abs(object_angles[-1] - object_angles[0])
-    center_angle = object_angles[0] + angle_span / 2.0
+    start_angle = object_angles[0]
+    end_angle = object_angles[-1]
+    angle_span = abs(end_angle - start_angle)
+    center_angle = start_angle + angle_span / 2.0
     
-    # Use the median distance for robustness against outliers
-    sorted_distances = sorted(object_distances)
-    center_distance = sorted_distances[len(sorted_distances) // 2]
+    center_distance = np.median(object_distances)
     
-    # Calculate object length using the arc length formula
-    # length = radius * angle_in_radians
     angle_in_radians = math.radians(angle_span)
     length_cm = center_distance * angle_in_radians
     
-    return (length_cm, center_angle, center_distance)
+    return (length_cm, center_angle, center_distance, start_angle, end_angle)
 
-def detect_objects(distances, angles, distance_threshold=50.0, jump_threshold=10.0):
+def detect_objects(distances, angles, distance_threshold=80.0, jump_threshold=25.0, min_points_for_object=3):
     """
-    Detects objects from a sensor scan based on distance and angle readings.
-
-    Args:
-        distances (list): List of distance measurements from the sensor.
-        angles (list): List of corresponding angle measurements.
-        distance_threshold (float): Readings above this distance are ignored.
-        jump_threshold (float): A jump in distance greater than this value
-                                signifies a gap between objects.
-
-    Returns:
-        list: A list of tuples, where each tuple represents an object
-              in the format (length_cm, center_angle, center_distance).
+    Detects objects using a more robust median-based comparison.
     """
     objects = []
     current_object_readings = []
     
-    # Combine angles and distances into pairs for easier iteration
     readings = zip(angles, distances)
 
     for angle, distance in readings:
-        # Check if the point is part of a potential object
         if distance < distance_threshold:
-            # If this is the start of a new object, just add the point
             if not current_object_readings:
                 current_object_readings.append((angle, distance))
             else:
-                # Check if there's a large jump from the previous point
-                prev_distance = current_object_readings[-1][1]
-                if abs(distance - prev_distance) < jump_threshold:
-                    # If the jump is small, it's the same object
+                # *** KEY LOGIC CHANGE ***
+                # Compare to the MEDIAN distance of the object, not just the last point.
+                # This is much more robust to noise and outliers.
+                median_distance = np.median([r[1] for r in current_object_readings])
+                
+                if abs(distance - median_distance) < jump_threshold:
+                    # Point is close to the object's center, add it
                     current_object_readings.append((angle, distance))
                 else:
-                    # A large jump means the previous object has ended
-                    if len(current_object_readings) > 1: # Require at least 2 points
+                    # A large jump signifies the end of the previous object
+                    if len(current_object_readings) >= min_points_for_object:
                         obj = _calculate_object_properties(current_object_readings)
                         objects.append(obj)
                     # Start a new object with the current point
                     current_object_readings = [(angle, distance)]
         else:
-            # If the distance is too far, the object (if any) has ended
-            if len(current_object_readings) > 1:
+            # Distance is too far, end the current object
+            if len(current_object_readings) >= min_points_for_object:
                 obj = _calculate_object_properties(current_object_readings)
                 objects.append(obj)
-            # Reset for the next object
             current_object_readings = []
 
-    # After the loop, process any remaining object
-    if len(current_object_readings) > 1:
+    # After the loop, process any final remaining object
+    if len(current_object_readings) >= min_points_for_object:
         obj = _calculate_object_properties(current_object_readings)
         objects.append(obj)
         
     return objects
 
-
-# --- plotting function (one dot per object, labeled with summary) ---
 def plot_objects(distances, angles):
+    """
+    Detects and plots objects using a stable two-panel layout.
+    """
     objs = detect_objects(distances, angles)
 
-    fig = plt.figure(figsize=(8, 4.5))
-    ax = plt.subplot(111, projection="polar")
+    # --- Corrected Plotting Setup ---
+    # Use GridSpec to create a figure with two different subplot types
+    fig = plt.figure(figsize=(14, 7))
+    gs = GridSpec(1, 2, width_ratios=[2.5, 1])
+    fig.suptitle("Object Detection Scan", fontsize=16)
 
-    # configure radar style
-    ax.set_theta_zero_location("E")   # 0° on the right
-    ax.set_theta_direction(1)         # counter-clockwise
-    ax.set_thetalim(0, math.pi)       # 0–180°
-    ax.set_rlim(0, 400)
+    # Create the polar subplot for the radar chart
+    ax = fig.add_subplot(gs[0], projection='polar')
 
-    # angle labels
-    ax.set_xticks([0, math.pi/6, math.pi/3, math.pi/2,
-                   2*math.pi/3, 5*math.pi/6, math.pi])
-    ax.set_xticklabels(["0°","30°","60°","90°","120°","150°","180°"])
-    ax.set_yticks([50, 100, 200, 400])
-    ax.set_yticklabels(["50cm","100cm","200cm","400cm"])
+    # Create the standard subplot for the text panel
+    text_ax = fig.add_subplot(gs[1])
+    # --- End of Correction ---
 
-    # plot one dot per object
-    for length_cm, angle_deg, distance_cm in objs:
-        angle_rad = math.radians(angle_deg)
-        ax.plot([angle_rad], [distance_cm], "ro", markersize=8)
-        ax.text(angle_rad, distance_cm,
-                f"({distance_cm:.1f}cm,{angle_deg:.1f}°,{length_cm:.1f}cm)",
-                ha="left", va="bottom",fontsize=6)
+    # --- Configure the Radar Plot (left panel) ---
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_thetalim(0, math.pi)
+    ax.set_rlabel_position(22.5)
+    ax.grid(True)
+    ax.spines['polar'].set_visible(False)
 
-    plt.title("Detected Objects (0-180°)/n (distance_cm, angle_deg, length_cm)")
-    plt.tight_layout()
+    # --- Plot Raw Sensor Data ---
+    angles_rad = np.deg2rad(angles)
+    valid_indices = [i for i, d in enumerate(distances) if d < 150]
+    ax.scatter(np.array(angles_rad)[valid_indices], np.array(distances)[valid_indices], 
+               c=np.array(distances)[valid_indices], cmap='winter', 
+               s=10, alpha=0.7)
+
+    # --- Plot Detected Objects and Prepare Labels ---
+    object_info_text = "Detected Objects:\n---------------------\n"
+    if not objs:
+        object_info_text += "None"
+    else:
+        for i, (length_cm, center_angle, distance_cm, start_angle, end_angle) in enumerate(objs):
+            arc_angles_rad = np.deg2rad(np.linspace(start_angle, end_angle, 50))
+            ax.plot(arc_angles_rad, [distance_cm] * 50, color='red', linewidth=5, alpha=0.8)
+
+            label_angle_rad = np.deg2rad(center_angle)
+            ax.text(label_angle_rad, distance_cm + 15, f"#{i+1}", 
+                    ha="center", va="center", fontweight='bold',
+                    bbox=dict(boxstyle="circle,pad=0.3", fc="yellow", ec="black", lw=1))
+
+            object_info_text += (f"#{i+1}:\n"
+                                 f"  Length: {length_cm:.1f} cm\n"
+                                 f"  Distance: {distance_cm:.1f} cm\n"
+                                 f"  Angle: {center_angle:.1f}°\n\n")
+
+    # --- Configure the Text Panel (right panel) ---
+    text_ax.axis('off')
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    text_ax.text(0.05, 0.95, object_info_text, transform=text_ax.transAxes, 
+                 fontsize=12, verticalalignment='top', bbox=props)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
 
-def telemeter(ser,command='2'):
-    while(True):
-        angle = int(input("Insert angle:/n (enter -1 to exit) "))
-        if angle == -1:
-            break
 
-        if 0 <= angle <= 180:
-            ser.write(command.encode())
-            byte_data = angle.to_bytes(1, "little")
-            ser.write(byte_data)
-            distances = get_distance_data(ser, 20)
-            print(distances)
-        
-        else:
-            print("Angle out of range.")
-#-----
+
+def telemeter(ser, command='2'):
+    if (command=='2'):
+        angle = int(input("Insert angle:/n (enter -1 to exit) "))
+        ser.write(command.encode())
+        ser.write(angle.to_bytes(1, "little"))
+    distance = 1
+    while (distance!=0):
+        distance = ser.read(2)
+        if not distance:
+            break
+        print(f"{int.from_bytes(distance, byteorder="little"):03}\r", end="")
+
 
 def get_distance_data(ser, length):
     raw_samples = []
@@ -190,60 +208,65 @@ def get_distance_data(ser, length):
     return distances, angles
 
 
-def _parse_u8(tok: str) -> int:
-    tok = tok.strip()
-    base = 16 if tok.lower().startswith("0x") else 10
-    v = int(tok, base)
-    if not (0 <= v <= 255):
-        raise ValueError(f"operand {tok!r} out of range (0..255)")
-    return v
 
-def _tokens(line: str):
-    line = line.split('#', 1)[0].strip()     # strip inline comments
-    if not line:
-        return []
-    return line.replace(',', ' ').split()    # allow commas or spaces
-
-def script_interpreter(in_path: str, out_path: str = "script.txt", per_line: bool = True) -> int:
+def assemble_script(input_filename, output_filename="script.txt"):
     """
-    Convert text script -> TEXT hex bytes.
-    If per_line=True: write bytes for each command on its own line.
-    If per_line=False: write all bytes on one line.
-    Returns total byte count.
+    Assembles a text script into a binary file of one-byte commands and operands.
+
+    Args:
+        input_filename (str): The name of the source text file.
+        output_filename (str): The name of the binary file to create.
+        
+    Returns:
+        bool: True on success, False on failure.
     """
-    total_bytes = 0
-    all_bytes = []
+    print(f"Assembling '{input_filename}' -> '{output_filename}'...")
+    try:
+        with open(input_filename, 'r') as infile, open(output_filename, 'wb') as outfile:
+            for line_num, line in enumerate(infile, 1):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
 
-    with open(in_path, "r", encoding="utf-8") as src, \
-         open(out_path, "w", encoding="utf-8", newline="") as out:
+                # --- THIS IS THE FIX ---
+                # Replace commas with spaces to handle both as delimiters
+                line = line.replace(',', ' ')
 
-        for lineno, line in enumerate(src, 1):
-            parts = _tokens(line)
-            if not parts:
-                if per_line: out.write("\n")  # keep blank lines
-                continue
+                parts = line.split()
+                command = parts[0]
 
-            cmd, *args = parts
-            if cmd not in OPCODES:
-                raise ValueError(f"Line {lineno}: unknown command '{cmd}'")
+                if command not in OPCODES:
+                    print(f"Error on line {line_num}: Unknown command '{command}'")
+                    return False
+                
+                opcode = OPCODES[command]
+                num_expected_operands = OPERANDS[command]
 
-            need = OPERANDS.get(cmd, 0)
-            if len(args) != need:
-                raise ValueError(f"Line {lineno}: '{cmd}' needs {need} operand(s), got {len(args)}")
+                if len(parts) - 1 != num_expected_operands:
+                    print(f"Error on line {line_num}: Command '{command}' expects "
+                          f"{num_expected_operands} operands, but got {len(parts) - 1}.")
+                    return False
 
-            # Build this line's byte sequence
-            line_bytes = [OPCODES[cmd]] + [_parse_u8(a) for a in args]
-            total_bytes += len(line_bytes)
+                outfile.write(opcode.to_bytes(1, 'little'))
 
-            if per_line:
-                out.write(" ".join(f"{b:02X}" for b in line_bytes) + "\n")
-            else:
-                all_bytes.extend(line_bytes)
-
-        if not per_line and all_bytes:
-            out.write(" ".join(f"{b:02X}" for b in all_bytes) + "\n")
-
-    return total_bytes
+                for i in range(num_expected_operands):
+                    operand_str = parts[i + 1]
+                    try:
+                        operand_int = int(operand_str)
+                        if not 0 <= operand_int <= 255:
+                            raise ValueError("Operand out of range for a single byte.")
+                        outfile.write(operand_int.to_bytes(1, 'little'))
+                    except ValueError:
+                        print(f"Error on line {line_num}: Operand '{operand_str}' "
+                              f"is not a valid integer between 0 and 255.")
+                        return False
+                        
+    except FileNotFoundError:
+        print(f"Error: Input file '{input_filename}' not found.")
+        return False
+        
+    print("Assembly successful.")
+    return True
 
 
 def send_file(ser: serial.Serial, file_name: str):
@@ -265,7 +288,7 @@ def send_file(ser: serial.Serial, file_name: str):
     # --- 0. Text or Script? ---
     if (os.path.basename(file_name) in SCRIPTS):
         print(f"script file: {os.path.basename(file_name)}")
-        script_interpreter(file_name)
+        assemble_script(file_name)
         file_name = "script.txt"
         f_type = 1
     else:
@@ -322,6 +345,105 @@ def send_file(ser: serial.Serial, file_name: str):
         print(f"An error occurred during transmission: {e}")
         return False
 
+
+def _get_distance_from_reading(reading, calibration_data):
+    """
+    Converts a raw sensor reading to distance (cm) using linear interpolation.
+
+    Args:
+        reading (float): The sensor value to convert.
+        calibration_data (list): The list of calibration values.
+
+    Returns:
+        float: The estimated distance in centimeters.
+    """
+    # Create the corresponding distance points (5cm, 10cm, ..., 50cm)
+    calib_distances_cm = np.arange(5, 51, 5)
+
+    # --- Handle edge cases (extrapolation) ---
+    # If the reading is weaker than the farthest point, it's > 50cm
+    if reading <= calibration_data[0]:
+        return 50.0  # Or float('inf') if you prefer
+    # If the reading is stronger than the closest point, it's < 5cm
+    if reading >= calibration_data[-1]:
+        return 5.0
+
+    # --- Find the two points to interpolate between ---
+    for i in range(len(calibration_data) - 1):
+        lower_calib_val = calibration_data[i]
+        upper_calib_val = calibration_data[i+1]
+
+        if lower_calib_val <= reading < upper_calib_val:
+            # We found the segment where our reading falls.
+            lower_dist = calib_distances_cm[i]
+            upper_dist = calib_distances_cm[i+1]
+
+            # --- Perform linear interpolation ---
+            # Calculate how far our reading is into the calibration segment (as a percentage)
+            fraction = (reading - lower_calib_val) / (upper_calib_val - lower_calib_val)
+            
+            # Apply that same fraction to the distance segment
+            interpolated_distance = lower_dist + fraction * (upper_dist - lower_dist)
+            
+            return interpolated_distance
+            
+    # This should not be reached if edge cases are handled, but as a fallback:
+    return 50.0
+
+def find_light_sources(measurements, calibration_data):
+    """
+    Finds the locations of up to two light sources from sensor readings.
+
+    Args:
+        measurements (list or np.array): An array of 181 sensor readings, one per degree.
+        calibration_data (list): The list of calibration values.
+
+    Returns:
+        list: A list of tuples, where each tuple is (distance_cm, angle_deg).
+    """
+    measurements = np.array(measurements)
+    light_sources = []
+    min_significant_reading = calibration_data[0]
+
+    # --- NEW: Apply a smoothing filter to the data to reduce noise ---
+    # A moving average filter with a window of 5 samples.
+    window_size = 5
+    smoothed_measurements = np.convolve(measurements, np.ones(window_size)/window_size, mode='valid')
+    # The output is shorter, so we need to offset indices later.
+    index_offset = (window_size - 1) // 2
+
+    # 1. Find all significant peaks in the SMOOTHED data.
+    #    - Increased prominence to be more selective after smoothing.
+    peak_indices_smoothed, properties = find_peaks(
+        smoothed_measurements,
+        height=min_significant_reading,
+        distance=20,
+        prominence=30
+    )
+
+    # 2. If no valid peaks are found, return an empty list
+    if len(peak_indices_smoothed) == 0:
+        return []
+
+    # 3. Adjust peak indices back to the original array coordinates
+    peak_indices_original = peak_indices_smoothed + index_offset
+
+    # 4. Get the sensor readings from the ORIGINAL unsmoothed data at the peak locations
+    peak_heights = measurements[peak_indices_original]
+
+    # 5. Combine peaks and their heights, then sort by height to find the strongest ones
+    found_peaks = sorted(zip(peak_heights, peak_indices_original), key=lambda x: x[0], reverse=True)
+
+    # 6. Process up to the two strongest peaks
+    for peak_reading, peak_angle in found_peaks[:2]:
+        distance_cm = _get_distance_from_reading(peak_reading, calibration_data)
+        light_sources.append((distance_cm, peak_angle))
+
+    # 7. Sort the final results by angle for consistent output
+    light_sources.sort(key=lambda x: x[1])
+    
+    return light_sources
+
 def main():
     options = ['1']
     state_2_flag = 1
@@ -355,7 +477,8 @@ def main():
                 ser.write(choice.encode())
                 distances, angles = get_distance_data(ser, 540)
                 print(f"distances: {distances[0:5]} angles: {angles[0:5]}")
-                plot_objects(distances, angles)
+                sources = find_light_sources(distances, LDR_CALIB)
+                print(sources)
 
         if choice == '4':
                 file_name = str(input("select file name to send: "))
@@ -372,6 +495,24 @@ def main():
                     break
                 else:
                     print("file saved successfully!")
+                if (os.path.basename(file_name) in SCRIPTS):
+                    cmd = ser.read(1)
+                    while (cmd != b'\x03'):
+                        print(cmd)
+                        # --- servo scan ---
+                        if (cmd == b'\x01'):
+                            opr_1 = ser.read(1)
+                            opr_2 = ser.read(1)
+                            print(f"opr 1: {opr_1} :: opr 2: {opr_2}")
+                            num_of_samples = int.from_bytes(opr_2) - int.from_bytes(opr_1)
+                            distances, angles = get_distance_data(ser, num_of_samples*3)
+                            print(f"distances: {distances[0:5]} angles: {angles[0:5]}")
+                            plot_objects(distances, angles)
+                        # --- telemeter ---
+                        elif (cmd == b'\x02'):
+                            telemeter(ser, 0)
+                        # --- read next command ---
+                        cmd = ser.read(1)
         
         if choice == '5':
             print("state 5")
@@ -382,7 +523,10 @@ def main():
             ser.write(choice.encode())
 
         if choice == '7':
-            print("state 7")
+            telemeter(ser)
+
+        if choice == '8':
+            print("LDR2 calibration...")
             ser.write(choice.encode())
 
 

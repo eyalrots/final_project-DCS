@@ -17,8 +17,10 @@ volatile uint16_t num_of_files = 0;
 volatile uint8_t cur_char;
 volatile uint16_t cur_header = SEG_D;
 volatile uint16_t file_location = START_OF_FILES;
+/* 1-> PB0 :: 2-> PB1 :: 0-> none */
 volatile uint8_t pb_pressed = 0;
-// volatile uint8_t bytes_read = 0x0;
+/* 0-> text :: 1-> script */
+volatile uint8_t is_script = 0;
 
 
 // System configuration
@@ -251,7 +253,7 @@ void turn_on_pwm() {
     TA1CTL = TASSEL_2 + MC_1;
 }
 // Timer A0
-void timer0_start_delay(unsigned int time_us) {
+void timer0_start_delay(unsigned int time_us, uint8_t unit) {
     /*
         Timer0 A0 used for delay.
         Input: time for delay in us.
@@ -261,9 +263,16 @@ void timer0_start_delay(unsigned int time_us) {
 
     // set time to range [0,485]ms
     in_range_time_us = time_us>=485001? 485000 : time_us;
-    // set register to correct delay
-    TA0CCR0 = in_range_time_us;
-    TA0CTL = TASSEL_2 + MC_1;
+    /* unit: 1-> ms :: 0-> us */
+    if (unit) {
+        // set register to correct delay
+        TA0CCR0 = time_us * 135;
+        TA0CTL = TASSEL_2 + ID_3 + MC_1;
+    } else {
+        // set register to correct delay
+        TA0CCR0 = in_range_time_us;
+        TA0CTL = TASSEL_2 + MC_1;
+    }
     __bis_SR_register(LPM0_bits + GIE);
 }
 //-------------------------------------------------------------
@@ -271,16 +280,6 @@ void timer0_start_delay(unsigned int time_us) {
 //-------------------------------------------------------------
 //                          ADC
 //-------------------------------------------------------------
-// void adc10_start_conversion() {
-//     ADC10CTL0 |= ADC10ON;
-//     ADC10CTL0 |= ENC + ADC10SC;
-// }
-// void adc10_stop_conversion() {
-//     ADC10CTL0 &= ~(ENC + ADC10SC);
-// }
-// void read_adc_mem(uint16_t* mem_value) {
-//     *mem_value = ADC10MEM * 330 / 1023;
-// }
 void enable_ADC(){
  ADC10CTL0 |= ADC10ON + ENC + ADC10SC ; // interrupt enabled
  ADC10CTL0 |= ADC10IE;
@@ -364,7 +363,7 @@ void generate_trigger_for_distance_sensor() {
     // Set out=1
     DIST_TRIGGER_OUT |= DIST_TRIGGER_MUSK;
     // Wait for ~10us -> set 11 for adjusted SMCLK frequency.
-    timer0_start_delay(11);
+    timer0_start_delay(11, 0);
     // Set out=0
     DIST_TRIGGER_OUT &= ~DIST_TRIGGER_MUSK;
 }
@@ -422,10 +421,11 @@ void __attribute__ ((interrupt(TIMER1_A1_VACTOR))) Timer1_A1_ISR (void)
                     echo_falling_edge = TA1CCR2;
                     // disable interrupt
                     TA1CCTL2 &= ~CCIE;
+                    TA1CTL = MC_0;
                     //TA1CCTL2 &= ~CCIFG;
                     //count = 0x0;
                     // exit sleep
-                    __bic_SR_register_on_exit(LPM0_bits + GIE);
+                    __bic_SR_register_on_exit(LPM0_bits);
                 }
             //}
             break;
@@ -449,23 +449,7 @@ __interrupt void ADC_handler() {
 // Uart Tx ISR
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR() {
-    // static uint8_t bytes_sent = 0;
-
-    // if (bytes_sent < 2) {
-    //     UCA0TXBUF = (uint8_t)(requested_angle >> (8*bytes_sent));
-    //     bytes_sent++;
-    // } else {
-    //     bytes_sent = 0;
-    //     LPM0_EXIT;
-    // }
-    // if (state==state4) {
-    //     if (input_file_is_ok) {
-    //         UCA0TXBUF = 0x06; /*ACK*/
-    //     } else {
-    //         UCA0TXBUF = 0x15; /*NAK*/
-    //     }
-    //     LPM0_EXIT;
-    // }
+    
 }
 // Uart Rx ISR
 #pragma vector=USCIAB0RX_VECTOR
@@ -506,7 +490,8 @@ __interrupt void USCI0RX_ISR() {
                     read_file_content = 0;
                     while (!(IFG2 & UCA0TXIFG));
                     UCA0TXBUF = 0x06;
-                    state=state0;
+                    is_script = ((file_header_t*)(cur_header-sizeof(file_header_t)))->type;
+                    // state=state0;
                 }
             }
             else if (bytes_read < 10) {
@@ -578,15 +563,15 @@ __interrupt void USCI0RX_ISR() {
             case '1':
                 state = state1;
                 break;
-                case '2':
+            case '2':
                 state = state2;
                 input_flag = !input_flag;
                 is_angle = 1;
                 break;
-                case '3':
+            case '3':
                 state = state3;
                 break;
-                case '4':
+            case '4':
                 state = state4;
                 input_flag = !input_flag;
                 read_file_content = 0;
@@ -604,6 +589,11 @@ __interrupt void USCI0RX_ISR() {
                 break;
             case '7':
                 state=state7;
+                input_flag = !input_flag;
+                is_angle = 1;
+                break;
+            case '8':
+                state=state8;
                 break;
             default:
                 state = state0;
@@ -612,25 +602,23 @@ __interrupt void USCI0RX_ISR() {
     }
 
     // exit lpm
-    // if (input_flag && !is_angle) {
-        switch (lpm_mode) {
-            case mode0:
-                LPM0_EXIT;
-                break;
-            case mode1:
-                LPM1_EXIT;
-                break;
-            case mode2:
-                LPM2_EXIT;
-                break;
-            case mode3:
-                LPM3_EXIT;
-                break;
-            case mode4:
-                LPM4_EXIT;
-                break;
-        }
-    // }
+    switch (lpm_mode) {
+        case mode0:
+            LPM0_EXIT;
+            break;
+        case mode1:
+            LPM1_EXIT;
+            break;
+        case mode2:
+            LPM2_EXIT;
+            break;
+        case mode3:
+            LPM3_EXIT;
+            break;
+        case mode4:
+            LPM4_EXIT;
+            break;
+    }
 }
 
 #pragma vector=PORT2_VECTOR
