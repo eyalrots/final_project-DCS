@@ -43,7 +43,7 @@ def _calculate_object_properties(readings):
     
     return (length_cm, center_angle, center_distance, start_angle, end_angle)
 
-def detect_objects(distances, angles, distance_threshold=80.0, jump_threshold=25.0, min_points_for_object=3):
+def detect_objects(distances, angles, distance_threshold=80.0, jump_threshold=20.0, min_points_for_object=3):
     """
     Detects objects using a more robust median-based comparison.
     """
@@ -542,11 +542,22 @@ def find_light_sources(measurements, calibration_data):
     
     return light_sources
 
+
+
 def main():
     options = ['1']
     state_2_flag = 1
 
-    menu = "choose 1 please :)"
+   # menu = "choose 1 please :)"
+    menu = " choose state from the list\n" \
+            "1. scan distanse\n" \
+            "2. telemeter\n" \
+            "3. light ditector\n" \
+            "4. send file\n" \
+            "5. see file\n" \
+            "6. erase file\n" \
+            "7. bonus qustion\n" \
+            "q. exit program"
     print(menu)
 
     ser = serial.Serial('COM3', 9600, bytesize=8,
@@ -634,6 +645,9 @@ def main():
             print("LDR2 calibration...")
             ser.write(choice.encode())
 
+        if choice == 'q':
+            print("see you next time love ido and eyal :0")
+            return
 
 if __name__ == '__main__':
     main()
