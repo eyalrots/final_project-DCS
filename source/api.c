@@ -219,10 +219,23 @@ void scan_at_given_angle() {
     }
 }
 
+void erase_info() {
+    lcd_puts("erasing segs...");
+    erase_seg((uint8_t*)SEG_B);
+    erase_seg((uint8_t*)SEG_C);
+    erase_seg((uint8_t*)SEG_D);
+    available_space = FILE_MEM_SIZE;
+    num_of_files = 0;
+    file_location = SEG_4;
+    cur_header = SEG_D;
+    while (state==state7);
+}
+
 void counting() {
-    uint8_t top_file;
-    print_num(available_space, 16, 5, 0x30);
-    print_num(num_of_files, 10, 5, 0x30);
+    print_num(*((uint16_t*)AVAILABLE_SPACE), 16, 5, 0x30);
+    print_num(*((uint8_t*)NUM_OF_FILES), 10, 5, 0x30);
+    // print_num(available_space, 16, 5, 0x30);
+    // print_num(num_of_files, 10, 5, 0x30);
 }
 
 file_header_t* find_next_text_header(uint16_t* addr, uint16_t start_addr,uint8_t start_index){
@@ -247,6 +260,40 @@ file_header_t* find_next_text_header(uint16_t* addr, uint16_t start_addr,uint8_t
     return header;
 }
 
+void read_file(uint16_t adder,uint16_t size){
+    uint16_t index = adder;
+    uint16_t stop_adder  = adder + size;
+    unsigned char ch;
+    uint16_t j = 0;
+    lcd_clear();
+    lcd_puts("start reading...");
+    while (state == state5) {
+        enterLPM(mode0);
+        if (pb_pressed==1) {   
+            lcd_clear();
+            for(j = 0; j < 32; j++) {
+                ch = *((uint8_t*)index++);
+                if (j == 17) {
+                    lcd_new_line;
+                }
+                if (index <= stop_adder) {
+                    lcd_data(ch);
+                }
+            }
+            index -= 16;
+            if (index >= stop_adder) {
+                index = adder;
+            }
+        }
+        if (pb_pressed==2) {
+            return;
+        }
+        
+    }
+    
+    
+}
+
 void file_mode(){ // i asume fill mode is in state6 
     uint16_t addr = SEG_D;
     uint16_t size;
@@ -263,8 +310,8 @@ void file_mode(){ // i asume fill mode is in state6
     }
     index = (addr - SEG_D) / sizeof(file_header_t);
 
-    f_next_header = index==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
-                                            find_next_text_header(&addr, addr+sizeof(file_header_t),index++);
+    f_next_header = index+1==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
+                                            find_next_text_header(&addr, addr+sizeof(file_header_t),++index);
     if (!f_next_header)
     {
         f_next_header = f_header;
@@ -272,8 +319,7 @@ void file_mode(){ // i asume fill mode is in state6
     while (state == state5){
         lcd_puts((const char*)f_header->name);
         lcd_new_line;
-        if (f_next_header == f_header)
-        {
+        if (f_next_header == f_header) {
             lcd_puts("only 1 file");
         }
         else{
@@ -285,17 +331,14 @@ void file_mode(){ // i asume fill mode is in state6
             f_header = f_next_header;
             
             index = (addr - SEG_D) / sizeof(file_header_t);
-            f_next_header = index==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
-                                                    find_next_text_header(&addr, addr+sizeof(file_header_t),index++);
+            f_next_header = index+1==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
+                                                    find_next_text_header(&addr, addr+sizeof(file_header_t),++index);
 
-            if (!f_next_header) {
-                f_next_header = f_header;
-            }
             pb_pressed = 0;
         } 
         /* button 1 */
         else if (pb_pressed==2) {
-            //     read_file(f_header->address,f_next_header->size);
+            read_file(f_header->address,f_header->size);
             pb_pressed = 0;
         }
         lcd_clear();

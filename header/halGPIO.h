@@ -125,7 +125,7 @@ void disable_ADC(void);
 void ADCconfigLDR1();
 void ADCconfigLDR2();
 unsigned int sample_ADC();
-void flash_write_block(uint8_t* dst_addr, const uint8_t* src, uint16_t len);
+void erase_seg(uint8_t* seg_addr);
 
 void print_b(char b, int start);
 void print_num(uint16_t num, int start, int len, char fill);

@@ -39,10 +39,16 @@ int main() {
             case state4:
                 // print_num(4, 1, 1, 0x30);
                 // counting();
-                state=state0;
+                // state=state0;
                 break;
             case state5:
                 file_mode();
+                break;
+            case state6:
+                counting();
+                break;
+            case state7:
+                erase_info();
                 break;
             default:
                 state=state0;

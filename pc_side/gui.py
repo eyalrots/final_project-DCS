@@ -342,13 +342,24 @@ def main():
                 ser.write(choice.encode())
                 send_file(ser, "test1.txt")
                 time.sleep(1)
-                ser.write(choice.encode())
-                send_file(ser, "test2.txt")
-                # ack = ser.read(1)
-                # print(ack)
+                ack = ser.read(1)
+                print(ack)
+                # ser.write(choice.encode())
+                # send_file(ser, "test2.txt")
+                # time.sleep(1)
+                # ser.write(choice.encode())
+                # send_file(ser, "test3.txt")
         
         if choice == '5':
             print("state 5")
+            ser.write(choice.encode())
+
+        if choice == '6':
+            print("state 6")
+            ser.write(choice.encode())
+
+        if choice == '7':
+            print("state 7")
             ser.write(choice.encode())
 
 

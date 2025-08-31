@@ -21,8 +21,9 @@
 #define   START_OF_FILES   0xF600 /* start of segment 4 */
 #define   END_OF_FILES     0xFDFF /*  end of segment 1  */
 #define   FILE_MEM_SIZE    0x800  /*        2KB         */
-#define   AVAILABLE_SPACE  0x107E /* 2B number @ end of sement C */
-#define   NUM_OF_FILES     0x107D /* B number of files in memory */
+#define   LDR_CALIB        0x1080 /* LDR calibration data @ segment B */
+#define   AVAILABLE_SPACE  0x10BE /*   2B number @ end of sement B    */
+#define   NUM_OF_FILES     0x10BD /*   B number of files in memory    */
 #define   HEADER_SIZE      10
 
 // LCDs abstraction
