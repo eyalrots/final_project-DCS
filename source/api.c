@@ -23,6 +23,12 @@ volatile uint16_t current_distance;
 
 volatile uint16_t files[10];
 
+/**
+ * @brief Initializes an array with zeros.
+ *
+ * @param array The array to be initialized.
+ * @param size The size of the array.
+ */
 void init_sample_array(unsigned int *array, unsigned int size) {
     unsigned int i = 0;
 
@@ -31,6 +37,11 @@ void init_sample_array(unsigned int *array, unsigned int size) {
     }
 }
 
+/**
+ * @brief Calculates distance using an ultrasonic sensor.
+ *
+ * @param distance_cm Pointer to store the calculated distance in centimeters.
+ */
 void get_distance_from_sensor(uint16_t *distance_cm) {
     /*
         The distance is calculated by the difference between the
@@ -48,6 +59,12 @@ void get_distance_from_sensor(uint16_t *distance_cm) {
     *distance_cm = (echo_high_time * 173) / 10000;
 }
 
+/**
+ * @brief Measures distance using LDRs (Light Dependent Resistors).
+ *
+ * @param ldr1_distance Pointer to store the distance from LDR 1.
+ * @param ldr2_distance Pointer to store the distance from LDR 2.
+ */
 void get_distance_from_ldrs(uint16_t *ldr1_distance, uint16_t *ldr2_distance) {
     // *ldr1_distance = adc_buffer[0] * 330 / 1023;
     // *ldr2_distance = adc_buffer[3] * 330 / 1023;
@@ -65,6 +82,11 @@ void get_distance_from_ldrs(uint16_t *ldr1_distance, uint16_t *ldr2_distance) {
     *ldr2_distance = sample_ADC();
 }
 
+/**
+ * @brief Moves a servo motor to a specified angle.
+ *
+ * @param new_angle The target angle for the motor.
+ */
 void move_motor_to_new_angle(uint8_t new_angle) {
     /* 
     Moving the motor is done by setting a new angle -
@@ -79,8 +101,12 @@ void move_motor_to_new_angle(uint8_t new_angle) {
         */
         on_time_us = 600 + ((190 * new_angle) / 18);
         generate_pwm_wave_with_Ton_at_freq(on_time_us, 40);
-    }
-    
+}
+
+/**
+ * @brief A delay function to wait for the motor to settle.
+ *
+ */
 void wait_for_motor() {
     timer0_start_delay(0xffff, 0);
     timer0_start_delay(0xffff, 0);
@@ -90,6 +116,11 @@ void wait_for_motor() {
     timer0_start_delay(0xffff, 0);
 }
     
+/**
+ * @brief Calculates distance based on LDR readings.
+ *
+ * @param distance Pointer to store the calculated distance.
+ */
 void calculate_distance_ldr(uint16_t* distance) {
     uint16_t ldr1_dist = 0;
     uint16_t ldr2_dist = 0;
@@ -101,12 +132,23 @@ void calculate_distance_ldr(uint16_t* distance) {
     *distance = (ldr1_dist + ldr2_dist) / 2;
 }
 
+/**
+ * @brief Moves the motor to the 0-degree position.
+ *
+ */
 void go_to_zero() {
     turn_on_pwm();
     move_motor_to_new_angle(0);
     wait_for_motor();
 }
 
+/**
+ * @brief Scans a range of angles with a sensor (ultrasonic or LDR).
+ *
+ * @param type The type of sensor to use (0 for ultrasonic, 1 for LDR).
+ * @param start The starting angle of the scan.
+ * @param end The ending angle of the scan.
+ */
 void scan_with_motor(uint8_t type, uint8_t start, uint8_t end) {
     /*
         Moves with steps of pre-defined size (in header file).
@@ -171,14 +213,26 @@ void scan_with_motor(uint8_t type, uint8_t start, uint8_t end) {
     turn_off_pwm();
 }
 
+/**
+ * @brief A wrapper for scan_with_motor for the ultrasonic sensor.
+ *
+ */
 void scan_with_sonic() {
     scan_with_motor(0, 0, 180);
 }
 
+/**
+ * @brief A wrapper for scan_with_motor for the LDRs.
+ *
+ */
 void scan_with_ldr() {
     scan_with_motor(1, 0, 180);
 }
 
+/**
+ * @brief Continuously measures distance at a specific angle.
+ *
+ */
 void scan_at_given_angle() {
     uint16_t current_distance_cm = 0;
     distance_sample_t current_sample;
@@ -222,6 +276,10 @@ void scan_at_given_angle() {
     }
 }
 
+/**
+ * @brief Erases stored information from flash memory.
+ *
+ */
 void erase_info() {
     uint8_t* temp_ptr;
     uint8_t temp_buffer[40];
@@ -251,6 +309,12 @@ void erase_info() {
     while (state==state7);
 }
 
+/**
+ * @brief Displays an incrementing number on the LCD.
+ *
+ * @param range The range of numbers to display.
+ * @param delay The delay between each number.
+ */
 void inc_lcd(uint8_t range, uint8_t delay){
     uint8_t i = 0;
     lcd_clear();
@@ -261,6 +325,12 @@ void inc_lcd(uint8_t range, uint8_t delay){
     }    
 }
 
+/**
+ * @brief Displays a decrementing number on the LCD.
+ *
+ * @param range The range of numbers to display.
+ * @param delay The delay between each number.
+ */
 void dec_lcd(uint8_t range, uint8_t delay){
     lcd_clear();
     lcd_puts("dec: 000");
@@ -270,6 +340,12 @@ void dec_lcd(uint8_t range, uint8_t delay){
     }
 }
 
+/**
+ * @brief Rotates a character on the LCD.
+ *
+ * @param ch The character to display.
+ * @param delay The delay between each movement.
+ */
 void rra_lcd(uint8_t ch, uint8_t delay) {
     lcd_clear();
     int start = 0, temp = 0;
@@ -296,6 +372,10 @@ void rra_lcd(uint8_t ch, uint8_t delay) {
     lcd_clear();
 }
 
+/**
+ * @brief Executes commands from a script stored in memory.
+ *
+ */
 void script_mode() {
     uint8_t* file_ptr;
     uint16_t file_size;
@@ -371,6 +451,14 @@ void script_mode() {
     }
 }
 
+/**
+ * @brief Finds the header of the next text file in flash.
+ *
+ * @param addr Pointer to the address of the header.
+ * @param start_addr The starting address to search from.
+ * @param start_index The starting index to search from.
+ * @return file_header_t* Pointer to the header of the next text file.
+ */
 file_header_t* find_next_text_header(uint16_t* addr, uint16_t start_addr,uint8_t start_index){
     uint8_t index = start_index;
     file_header_t* header = (file_header_t*)start_addr;
@@ -393,6 +481,12 @@ file_header_t* find_next_text_header(uint16_t* addr, uint16_t start_addr,uint8_t
     return header;
 }
 
+/**
+ * @brief Reads a file from flash and displays it on the LCD.
+ *
+ * @param adder The starting address of the file.
+ * @param size The size of the file.
+ */
 void read_file(uint16_t adder,uint16_t size){
     uint16_t index = adder;
     uint16_t stop_adder  = adder + size;
@@ -427,6 +521,10 @@ void read_file(uint16_t adder,uint16_t size){
     
 }
 
+/**
+ * @brief Allows browsing and reading text files stored in flash.
+ *
+ */
 void file_mode(){ // i asume fill mode is in state6 
     uint16_t addr = SEG_D;
     uint16_t size;
@@ -479,6 +577,10 @@ void file_mode(){ // i asume fill mode is in state6
     
 }
 
+/**
+ * @brief Calibrates the LDR sensors.
+ *
+ */
 void calibrate_ldr() {
     uint16_t* flash_ptr = NULL;
     uint8_t samples_saved = 0;
@@ -517,6 +619,10 @@ void calibrate_ldr() {
     while (state==state7);
 }
 
+/**
+ * @brief Reads and displays LDR calibration data.
+ *
+ */
 void read_calibration() {
     uint8_t i;
     uint16_t* flash_ptr = (uint8_t*)LDR_CALIB;
@@ -527,6 +633,10 @@ void read_calibration() {
     }
 }
 
+/**
+ * @brief Scans using both ultrasonic and LDR sensors simultaneously.
+ *
+ */
 void detect_both_sensors() {
     uint8_t data[5];
     uint8_t cur_angle = 0;
