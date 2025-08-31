@@ -266,9 +266,9 @@ def send_file(ser: serial.Serial, file_name: str):
         for byte_of_header in header:
             ser.write(bytes([byte_of_header])) # Convert int back to a bytes object
             print(f"  > Sent header byte: {hex(byte_of_header)}")
-            time.sleep(0.05) # Wait for 1 second
+            time.sleep(0.01) # Wait for 1 second
         print(header.decode())
-        time.sleep(0.05)
+        time.sleep(0.01)
         # Send the file content
         print("Sending file content...")
         bytes_sent = 0
@@ -281,6 +281,7 @@ def send_file(ser: serial.Serial, file_name: str):
                 if not byte_to_send:
                     break # End of file
                 ser.write(byte_to_send)
+                print(f"  > Sent file byte: {hex(byte_to_send[0])}")
                 time.sleep(0.05)
                 bytes_sent += 1
         
@@ -340,6 +341,9 @@ def main():
         if choice == '4':
                 ser.write(choice.encode())
                 send_file(ser, "test1.txt")
+                time.sleep(1)
+                ser.write(choice.encode())
+                send_file(ser, "test2.txt")
                 # ack = ser.read(1)
                 # print(ack)
         

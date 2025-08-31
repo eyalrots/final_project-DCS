@@ -8,6 +8,12 @@ extern volatile circular_buffer_t transmit_buffer;
 extern volatile uint8_t adc_buffer[];
 extern volatile uint8_t cur_char;
 
+extern volatile uint16_t available_space;
+extern volatile uint16_t num_of_files;
+extern volatile uint16_t cur_header;
+extern volatile uint16_t file_location;
+extern volatile uint8_t pb_pressed;
+
 volatile unsigned int echo_rising_edge, echo_falling_edge;
 volatile uint8_t requested_angle;
 volatile uint8_t received_new_anlge_flag = 0;
@@ -214,22 +220,85 @@ void scan_at_given_angle() {
 }
 
 void counting() {
-    // file_header_t* header;
-    uint16_t file_addr;
-    uint16_t i = 0;
-    uint8_t header[25];
-    lcd_clear();
-    lcd_puts("reading...");
-    while (state==state5) {    
-        open_flash();
-        i = *(uint16_t*)SEG_D;
-        close_flash();
-        timer0_start_delay(0xffff);
-        print_num(i, 16, 5, 0x30);
-        // header = (file_header_t*)(SEG_D);
-        // file_addr = header->address;
-        // for (i = 0; i < header->size; i++) {
-        //     lcd_data(*(uint8_t*)file_addr);
-        // }
+    uint8_t top_file;
+    print_num(available_space, 16, 5, 0x30);
+    print_num(num_of_files, 10, 5, 0x30);
+}
+
+file_header_t* find_next_text_header(uint16_t* addr, uint16_t start_addr,uint8_t start_index){
+    uint8_t index = start_index;
+    file_header_t* header = (file_header_t*)start_addr;
+    *addr = start_addr;
+    while (header->type)
+    {
+        if (index == num_of_files) {
+            header = (file_header_t*)SEG_D;
+            index = 0;
+        }
+        else {
+            header++;
+            *addr += sizeof(file_header_t);
+            index++;
+        }
+        if (index == start_index) {
+            return NULL;
+        }
     }
+    return header;
+}
+
+void file_mode(){ // i asume fill mode is in state6 
+    uint16_t addr = SEG_D;
+    uint16_t size;
+    uint8_t index;
+    file_header_t* f_header;
+    file_header_t* f_next_header;
+
+    f_header = find_next_text_header(&addr, SEG_D,0);
+    if (!f_header)
+    {   
+        lcd_clear();
+        lcd_puts("0 text files");
+        return;
+    }
+    index = (addr - SEG_D) / sizeof(file_header_t);
+
+    f_next_header = index==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
+                                            find_next_text_header(&addr, addr+sizeof(file_header_t),index++);
+    if (!f_next_header)
+    {
+        f_next_header = f_header;
+    }
+    while (state == state5){
+        lcd_puts((const char*)f_header->name);
+        lcd_new_line;
+        if (f_next_header == f_header)
+        {
+            lcd_puts("only 1 file");
+        }
+        else{
+            lcd_puts((const char*)f_next_header->name);
+        }
+        enterLPM(mode0);
+        /* button 0 */
+        if (pb_pressed==1) {
+            f_header = f_next_header;
+            
+            index = (addr - SEG_D) / sizeof(file_header_t);
+            f_next_header = index==num_of_files ? find_next_text_header(&addr, SEG_D,0) :
+                                                    find_next_text_header(&addr, addr+sizeof(file_header_t),index++);
+
+            if (!f_next_header) {
+                f_next_header = f_header;
+            }
+            pb_pressed = 0;
+        } 
+        /* button 1 */
+        else if (pb_pressed==2) {
+            //     read_file(f_header->address,f_next_header->size);
+            pb_pressed = 0;
+        }
+        lcd_clear();
+    }
+    
 }

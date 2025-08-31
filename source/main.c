@@ -21,7 +21,7 @@ int main() {
     while (1) {
         switch (state) {
             case state0:
-                lcd_clear();
+                // lcd_clear();
                 enterLPM(mode0);
                 break;
             case state1:
@@ -36,10 +36,13 @@ int main() {
                 scan_with_ldr();
                 state=state0;
                 break;
-            case state5:
-                print_num(4, 1, 1, 0x30);
-                counting();
+            case state4:
+                // print_num(4, 1, 1, 0x30);
+                // counting();
                 state=state0;
+                break;
+            case state5:
+                file_mode();
                 break;
             default:
                 state=state0;

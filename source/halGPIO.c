@@ -12,10 +12,13 @@ extern volatile uint16_t current_distance;
 extern volatile uint16_t files[];
 
 volatile unsigned int count = 0x0;
-volatile uint16_t available_space;
-volatile uint16_t num_of_files;
+volatile uint16_t available_space = FILE_MEM_SIZE;
+volatile uint16_t num_of_files = 0;
 volatile uint8_t input_file_is_ok = 0x0;
 volatile uint8_t cur_char;
+volatile uint16_t cur_header = SEG_D;
+volatile uint16_t file_location = START_OF_FILES;
+volatile uint8_t pb_pressed = 0;
 // volatile uint8_t bytes_read = 0x0;
 
 
@@ -29,25 +32,34 @@ void system_config() {
     __adc_config_2();
     __UART_config();
     lcd_init();
+    // FlashConfig();
     memset((uint8_t*)files, 0x0, 10);
-    
+    // open_flash();
+    // *(uint8_t*)SEG_D = 0;
+    // *(uint8_t*)SEG_C = 0;
+    // *(uint8_t*)SEG_B = 0;
+    // *(uint8_t*)SEG_4 = 0;
+    // *(uint8_t*)SEG_3 = 0;
+    // *(uint8_t*)SEG_2 = 0;
+    // *(uint8_t*)SEG_1 = 0;
+    // close_flash();
     /* init variables in memory */
-    open_flash();
-    available_space = *((uint16_t*)AVAILABLE_SPACE);
-    num_of_files = *((uint8_t*)NUM_OF_FILES);
-    if (available_space > FILE_MEM_SIZE || (available_space==0 && num_of_files<=0)) {
-        *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
-        *((uint8_t*)NUM_OF_FILES) = 0;
-        available_space = FILE_MEM_SIZE;
-        num_of_files = 0;
-    }
-    if (num_of_files > 10) {
-        *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
-        *((uint8_t*)NUM_OF_FILES) = 0;
-        available_space = FILE_MEM_SIZE;
-        num_of_files = 0;
-    }
-    close_flash();
+    // open_flash();
+    // available_space = *((uint16_t*)AVAILABLE_SPACE);
+    // num_of_files = *((uint8_t*)NUM_OF_FILES);
+    // if (available_space > FILE_MEM_SIZE || (available_space==0 && num_of_files<=0)) {
+    //     *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
+    //     *((uint8_t*)NUM_OF_FILES) = 0;
+    //     available_space = FILE_MEM_SIZE;
+    //     num_of_files = 0;
+    // }
+    // if (num_of_files > 10) {
+    //     *((uint16_t*)AVAILABLE_SPACE) = FILE_MEM_SIZE;
+    //     *((uint8_t*)NUM_OF_FILES) = 0;
+    //     available_space = FILE_MEM_SIZE;
+    //     num_of_files = 0;
+    // }
+    // close_flash();
     
     
 
@@ -484,17 +496,12 @@ __interrupt void USCI0RX_ISR() {
     static uint8_t input_flag = 0;
     /* 1 -> angle ; 0 -> file */
     static uint8_t is_angle = 0; 
-    /* current character read -> for file reading */
-    // uint8_t cur_char;
     /* current header file */
-    uint8_t* cur_header;
     static uint8_t bytes_read = 0x0;
     static uint16_t file_idx = 0x0;
-    static uint8_t* file_addr = NULL;
     static uint8_t read_file_content = 0;
-    uint16_t temp;
+    static uint16_t f_size = 0x00;
     
-    print_num(UCA0RXBUF, 3, 3, 0x30);
     if (input_flag) {
         if (is_angle) {
             requested_angle = UCA0RXBUF;
@@ -503,59 +510,105 @@ __interrupt void USCI0RX_ISR() {
             is_angle = 0;
         } else {
             cur_char = UCA0RXBUF;
-            
             if (read_file_content) {
-                if (file_idx>=((file_header_t*)cur_header)->size-1) {
+                /* erase segment when first entered */
+                if (file_location==SEG_1 || file_location==SEG_2 || file_location==SEG_3 || file_location==SEG_4) {
+                    FCTL3 = FWKEY;             // Unlock flash
+                    FCTL1 = FWKEY + ERASE;     // Set ERASE bit
+                    *(uint8_t*)file_location = 0;      // Dummy write to a location in the segment to start the erase
+                    while(FCTL3 & BUSY);       // Wait for erase to complete
+                    FCTL3 = FWKEY + LOCK;      // Lock flash
+                }
+                /* save character in falsh */
+                open_flash();
+                *((uint8_t*)file_location++) = cur_char;
+                close_flash();
+                file_idx++;
+                /* exit file writing */
+                if (file_idx>=f_size-1) {
                     input_flag = !input_flag;
                     read_file_content = 0;
-                    state=state0;
-                    // print_num(available_space, 16, 8, 0x30);
-                    // print_num(num_of_files, 5, 3, 0x30);
-                    // LPM0_EXIT;
+                    state-state0;
                 }
-                // lcd_data(cur_char);
-                open_flash();
-                file_addr[file_idx++] = cur_char;
-                close_flash();
             }
             else if (bytes_read < 10) {
-                *(cur_header + bytes_read++) = cur_char;
+                /* erase segment when first entered */
+                if (cur_header==SEG_D || cur_header==SEG_B) {
+                    FCTL3 = FWKEY;             // Unlock flash
+                    FCTL1 = FWKEY + ERASE;     // Set ERASE bit
+                    *((uint8_t*)cur_header) = 0;      // Dummy write to a location in the segment to start the erase
+                    while(FCTL3 & BUSY);       // Wait for erase to complete
+                    FCTL3 = FWKEY + LOCK;      // Lock flash
+                }
+                /* save header data */
+                open_flash();
+                *((uint8_t*)cur_header++) = cur_char;
+                while(FCTL3 & BUSY);
+                close_flash();
+                bytes_read++;
+                if (bytes_read==2) { f_size = ((file_header_t*)(cur_header-2))->size;}
                 input_file_is_ok = 0;
             } else if (bytes_read == 10) {
-                // print_num(cur_char, 10, 4, 0x30);
-                ((file_header_t*)cur_header)->address = START_OF_FILES + FILE_MEM_SIZE - available_space + 1;
-                file_addr = (uint8_t*)((file_header_t*)cur_header)->address;
-                available_space -= ((file_header_t*)cur_header)->size;
+                /* save file address in header */
+                open_flash();
+                *((uint8_t*)cur_header++) = (uint8_t)(file_location);
+                while(FCTL3 & BUSY);
+                *((uint8_t*)cur_header++) = (uint8_t)((file_location) >> 8);
+                while(FCTL3 & BUSY);
+                close_flash();
+                /* erase segment when first entered */
+                if (file_location==SEG_1 || file_location==SEG_2 || file_location==SEG_3 || file_location==SEG_4) {
+                    FCTL3 = FWKEY;             // Unlock flash
+                    FCTL1 = FWKEY + ERASE;     // Set ERASE bit
+                    *((uint8_t*)file_location) = 0;      // Dummy write to a location in the segment to start the erase
+                    while(FCTL3 & BUSY);       // Wait for erase to complete
+                    FCTL3 = FWKEY + LOCK;      // Lock flash
+                }
+                if (available_space==FILE_MEM_SIZE) {
+                    FCTL3 = FWKEY;             // Unlock flash
+                    FCTL1 = FWKEY + ERASE;     // Set ERASE bit
+                    *(uint8_t*)SEG_C = 0;      // Dummy write to a location in the segment to start the erase
+                    while(FCTL3 & BUSY);       // Wait for erase to complete
+                    FCTL3 = FWKEY + LOCK;      // Lock flash
+                }
+                /* update space and number of files */
+                available_space -= f_size;
                 num_of_files++;     
                 file_idx = 0;
                 read_file_content = 1;
+
                 open_flash();
-                memcpy(((uint8_t*)(SEG_D+sizeof(file_header_t)*num_of_files)), cur_header, sizeof(file_header_t));
                 *((uint16_t*)AVAILABLE_SPACE) = available_space;
+                while(FCTL3 & BUSY);
                 *((uint8_t*)NUM_OF_FILES) = num_of_files;
-                file_addr[file_idx++] = cur_char;
+                while(FCTL3 & BUSY);
+                *((uint8_t*)file_location++) = cur_char;
+                while(FCTL3 & BUSY);
                 close_flash();
             }
-            // print_num(cur_header[bytes_read-1], bytes_read*2, 2, 0x30);
         }
     } else {
         switch (UCA0RXBUF) {
             case '1':
                 state = state1;
                 break;
-            case '2':
+                case '2':
                 state = state2;
                 input_flag = !input_flag;
                 is_angle = 1;
                 break;
-            case '3':
+                case '3':
                 state = state3;
                 break;
-            case '4':
+                case '4':
                 state = state4;
                 input_flag = !input_flag;
                 read_file_content = 0;
                 is_angle = 0;
+                bytes_read = 0;
+                file_idx = 0;
+                f_size = 0;
+                lcd_clear();
                 break;
             case '5':
                 state=state5;
@@ -586,5 +639,43 @@ __interrupt void USCI0RX_ISR() {
                 break;
         }
     // }
+}
+
+#pragma vector=PORT2_VECTOR
+  __interrupt void PBs_handler(void){
+   
+	delay(debounceVal);
+
+	if(PBsArrIntPend & PB0){
+        pb_pressed = 1;
+        PBsArrIntPend &= ~PB0;
+    }
+    else if(PBsArrIntPend & PB1){
+        pb_pressed = 2;
+        PBsArrIntPend &= ~PB1; 
+    }
+
+    switch(lpm_mode){
+        case mode0:
+            LPM0_EXIT; // must be called from ISR only
+            break;
+            
+        case mode1:
+            LPM1_EXIT; // must be called from ISR only
+            break;
+            
+        case mode2:
+            LPM2_EXIT; // must be called from ISR only
+            break;
+                    
+                case mode3:
+            LPM3_EXIT; // must be called from ISR only
+            break;
+                    
+                case mode4:
+            LPM4_EXIT; // must be called from ISR only
+            break;
+	}
+        
 }
 //-------------------------------------------------------------

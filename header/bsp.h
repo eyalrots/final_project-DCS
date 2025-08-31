@@ -14,6 +14,10 @@
 #define   SEG_D            0x1000
 #define   SEG_C            0x1040
 #define   SEG_B            0x1080
+#define   SEG_4            0xF600
+#define   SEG_3            0xF800
+#define   SEG_2            0xFA00
+#define   SEG_1            0xFC00
 #define   START_OF_FILES   0xF600 /* start of segment 4 */
 #define   END_OF_FILES     0xFDFF /*  end of segment 1  */
 #define   FILE_MEM_SIZE    0x800  /*        2KB         */
@@ -74,6 +78,7 @@ void __timer1_A2_capture_config();
 void __adc_config();
 void __adc_config_2();
 void __UART_config();
+void FlashConfig();
 
 typedef enum {
     state0,
@@ -101,10 +106,10 @@ typedef enum {
 }file_type_t;
 
 /* file object */
-typedef struct __attribute__ ((packed)) file {
+typedef struct __attribute__ ((packed)) file_header {
     uint16_t size;
     uint8_t name[7];
-    file_type_t type;
+    uint8_t type;
     uint16_t address;
 }file_header_t;
 

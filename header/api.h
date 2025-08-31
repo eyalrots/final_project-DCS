@@ -11,5 +11,6 @@ void scan_with_sonic();
 void scan_with_ldr();
 void scan_at_given_angle();
 void counting();
+void file_mode();
 
 #endif

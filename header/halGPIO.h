@@ -80,6 +80,7 @@ extern void DelayUs(unsigned int);
 
 /* open flash for reading / writing */
 inline void open_flash(void) {
+    while(FCTL3 & BUSY);
     /* unlock */
     FCTL3 = FWKEY;
     /* write mode */
@@ -87,6 +88,7 @@ inline void open_flash(void) {
 }
 /* close flash */
 inline void close_flash(void) {
+    while(FCTL3 & BUSY);
     /* clear WRT */
     FCTL1 = FWKEY;
     /* relock */
