@@ -483,9 +483,6 @@ void calibrate_ldr() {
     uint16_t* flash_ptr = NULL;
     uint8_t samples_saved = 0;
     uint16_t distace = 0;
-    uint16_t samples[20] = {632, 374, 441, 455, 444, 487, 451, 531, 534, 553,
-                            70, 324, 399, 448, 458, 497, 470, 455, 408, 496};
-    /* 1-> LDR1 :: 2-> LDR2 */
     flash_ptr = (uint16_t*)LDR_CALIB;
     /* init segment for new calibration */
     erase_seg((uint8_t*)SEG_B);
@@ -493,18 +490,18 @@ void calibrate_ldr() {
     num_of_files = 0;
     /* save samples of calibration */
     while (samples_saved < 20) {
-        // /* mesure LDR value */
-        // if (samples_saved < 10)
-        //     ADCconfigLDR1();
-        // else
-        //     ADCconfigLDR2();
-        // enable_ADC();
-        // enterLPM(mode0);
-        // disable_ADC();
-        // distace = sample_ADC();
-        // enterLPM(mode0);
-        // /* save value in memort when ready */
-        // if (pb_pressed==1) {
+        /* mesure LDR value */
+        if (samples_saved < 10)
+            ADCconfigLDR1();
+        else
+            ADCconfigLDR2();
+        enable_ADC();
+        enterLPM(mode0);
+        disable_ADC();
+        distace = sample_ADC();
+        enterLPM(mode0);
+        /* save value in memort when ready */
+        if (pb_pressed==1) {
             open_flash();
             *flash_ptr++ = samples[samples_saved];
             close_flash();
@@ -512,7 +509,7 @@ void calibrate_ldr() {
             // pb_pressed = 0;
             print_num(distace, 16, 5, 0x30);
             print_num(samples_saved, 3, 3, 0x30);
-        // }
+        }
     }
     while (state==state7);
 }
